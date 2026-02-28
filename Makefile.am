@@ -240,6 +240,11 @@ if ENABLE_SIXEL
 dist_tmux_SOURCES += image.c image-sixel.c
 endif
 
+# Enable kitty graphics protocol support.
+if ENABLE_KITTY
+dist_tmux_SOURCES += image-kitty.c
+endif
+
 if NEED_FUZZING
 check_PROGRAMS = \
 	fuzz/input-fuzzer \

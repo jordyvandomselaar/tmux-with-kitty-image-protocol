@@ -17,7 +17,7 @@ printf 'set -g allow-set-title on\n' >$CONF
 $TMUX -f$CONF new -d 'sleep 1'
 case "$($TMUX display -p '#{image_support}')" in
 *kitty*) ;;
-*) exit 0 ;;
+*) [ -n "$REQUIRE_KITTY_IMAGES" ] && exit 1; exit 0 ;;
 esac
 $TMUX kill-server 2>/dev/null
 
@@ -28,6 +28,7 @@ test_apc() {
 
 	$TMUX capturep -pS0 >$TMP || exit 1
 	grep -q "$2" $TMP || exit 1
+	[ -n "$4" ] && grep -q "$4" $TMP && exit 1
 
 	title=$($TMUX display -p '#{pane_title}')
 	case "$title" in
@@ -36,8 +37,15 @@ test_apc() {
 }
 
 test_apc '\033_Ga=q,t=d,f=24,s=1,v=1;AAAA\033\\after-query\n' \
-    'after-query' 'Ga=q'
+    'after-query' 'Ga=q' 'OK'
 test_apc '\033_Gbad\033\\after-malformed\n' 'after-malformed' 'Gbad'
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,t=d,f=24,s=1,v=1,m=1;AA\033\\\\\033_Gm=0;AA\033\\\\after-chunk\\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-chunk/ { print NR; exit }' $TMP)" = 2 ] || exit 1
 
 $TMUX kill-server 2>/dev/null
 

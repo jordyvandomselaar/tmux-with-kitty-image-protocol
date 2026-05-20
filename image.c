@@ -81,6 +81,82 @@ image_free(struct image *im)
 	free(im);
 }
 
+#ifdef ENABLE_KITTY_IMAGES
+static int
+image_match_kitty(struct image *im, struct kitty_image *ki, char what)
+{
+	struct kitty_image	*existing;
+	u_int			 image_id, image_num, placement_id;
+
+	if (im->type != IMAGE_KITTY)
+		return (0);
+	existing = im->data.kitty;
+
+	image_id = kitty_get_image_id(ki);
+	image_num = kitty_get_image_num(ki);
+	placement_id = kitty_get_placement_id(ki);
+
+	switch (what) {
+	case 'a':
+		return (1);
+	case 'i':
+		return (image_id != 0 &&
+		    kitty_get_image_id(existing) == image_id);
+	case 'I':
+		return (image_num != 0 &&
+		    kitty_get_image_num(existing) == image_num);
+	case 'p':
+		return (placement_id != 0 &&
+		    kitty_get_placement_id(existing) == placement_id);
+	default:
+		if (placement_id != 0)
+			return (kitty_get_placement_id(existing) == placement_id);
+		if (image_id != 0 && kitty_get_placement_id(existing) == 0)
+			return (kitty_get_image_id(existing) == image_id);
+		if (image_num != 0 && kitty_get_placement_id(existing) == 0)
+			return (kitty_get_image_num(existing) == image_num);
+		return (0);
+	}
+}
+
+static int
+image_remove_kitty(struct screen *s, struct kitty_image *ki, char what)
+{
+	struct image	*im, *im1;
+	int		 redraw = 0;
+
+	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
+		if (image_match_kitty(im, ki, what)) {
+			image_free(im);
+			redraw = 1;
+		}
+	}
+	return (redraw);
+}
+
+int
+image_kitty_delete(struct screen *s, struct kitty_image *ki)
+{
+	char	what;
+
+	if (s == NULL || ki == NULL)
+		return (0);
+
+	what = kitty_get_delete_what(ki);
+	if (what == '\0')
+		return (0);
+	return (image_remove_kitty(s, ki, what));
+}
+
+static int
+image_kitty_replace(struct screen *s, struct kitty_image *ki)
+{
+	if (s == NULL || ki == NULL)
+		return (0);
+	return (image_remove_kitty(s, ki, '\0'));
+}
+#endif
+
 int
 image_free_all(struct screen *s)
 {
@@ -175,6 +251,7 @@ image_store(struct screen *s, enum image_type type, void *data)
 #endif
 #ifdef ENABLE_KITTY_IMAGES
 	case IMAGE_KITTY:
+		image_kitty_replace(s, data);
 		im->data.kitty = data;
 		kitty_size_in_cells(im->data.kitty, &im->sx, &im->sy);
 		break;

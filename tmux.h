@@ -3856,6 +3856,9 @@ struct image	*image_store(struct screen *, enum image_type, void *);
 int		 image_check_line(struct screen *, u_int, u_int);
 int		 image_check_area(struct screen *, u_int, u_int, u_int, u_int);
 int		 image_scroll_up(struct screen *, u_int);
+#ifdef ENABLE_KITTY_IMAGES
+int		 image_kitty_delete(struct screen *, struct kitty_image *);
+#endif
 #endif
 
 #ifdef ENABLE_SIXEL_IMAGES
@@ -3880,6 +3883,14 @@ void		 kitty_size_in_cells(struct kitty_image *, u_int *, u_int *);
 char		 kitty_get_action(struct kitty_image *);
 u_int		 kitty_get_image_id(struct kitty_image *);
 u_int		 kitty_get_rows(struct kitty_image *);
+u_int		 kitty_get_placement_id(struct kitty_image *);
+u_int		 kitty_get_image_num(struct kitty_image *);
+char		 kitty_get_delete_what(struct kitty_image *);
+int		 kitty_get_cursor_policy(struct kitty_image *);
+int		 kitty_has_more(struct kitty_image *);
+int		 kitty_is_incomplete(struct kitty_image *);
+int		 kitty_is_continuation(struct kitty_image *);
+int		 kitty_append(struct kitty_image *, struct kitty_image *, size_t);
 char		*kitty_print(struct kitty_image *, size_t *);
 char		*kitty_delete_all(size_t *);
 #endif

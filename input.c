@@ -146,6 +146,9 @@ struct input_ctx {
 	struct evbuffer			*since_ground;
 	struct event			 ground_timer;
 
+#ifdef ENABLE_KITTY_IMAGES
+	struct kitty_image		*kitty_pending;
+#endif
 };
 
 /* Helper functions. */
@@ -903,6 +906,10 @@ input_free(struct input_ctx *ictx)
 	evbuffer_free(ictx->since_ground);
 	event_del(&ictx->ground_timer);
 
+#ifdef ENABLE_KITTY_IMAGES
+	kitty_free(ictx->kitty_pending);
+#endif
+
 	screen_write_stop_sync(ictx->wp);
 
 	free(ictx);
@@ -914,6 +921,11 @@ input_reset(struct input_ctx *ictx, int clear)
 {
 	struct screen_write_ctx	*sctx = &ictx->ctx;
 	struct window_pane	*wp = ictx->wp;
+
+#ifdef ENABLE_KITTY_IMAGES
+	kitty_free(ictx->kitty_pending);
+	ictx->kitty_pending = NULL;
+#endif
 
 	input_reset_cell(ictx);
 
@@ -2749,6 +2761,32 @@ input_da1_has_sixel(__unused struct input_ctx *ictx)
 }
 
 #ifdef ENABLE_KITTY_IMAGES
+/* Check if any visible client for this pane supports kitty graphics. */
+static int
+input_has_kitty(struct input_ctx *ictx)
+{
+	struct window_pane	*wp = ictx->wp;
+	struct client		*c;
+
+	if (wp == NULL || !window_pane_visible(wp))
+		return (0);
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (c->session == NULL || c->tty.term == NULL)
+			continue;
+		if (c->flags & CLIENT_SUSPENDED)
+			continue;
+		if (c->tty.flags & TTY_FREEZE)
+			continue;
+		if (c->session->curw->window != wp->window)
+			continue;
+		if (c->tty.term->flags & TERM_KITTY)
+			return (1);
+	}
+	return (0);
+}
+#endif
+
+#ifdef ENABLE_KITTY_IMAGES
 /* Handle a kitty graphics APC sequence. */
 static void
 input_apc_kitty_image(struct input_ctx *ictx)
@@ -2767,13 +2805,42 @@ input_apc_kitty_image(struct input_ctx *ictx)
 	if (ki == NULL)
 		return;
 
+	if (ictx->kitty_pending != NULL) {
+		if (!kitty_is_continuation(ki)) {
+			kitty_free(ictx->kitty_pending);
+			ictx->kitty_pending = NULL;
+			kitty_free(ki);
+			return;
+		}
+		switch (kitty_append(ictx->kitty_pending, ki, input_buffer_size)) {
+		case 0:
+			kitty_free(ki);
+			return;
+		case 1:
+			kitty_free(ki);
+			ki = ictx->kitty_pending;
+			ictx->kitty_pending = NULL;
+			break;
+		default:
+			kitty_free(ictx->kitty_pending);
+			ictx->kitty_pending = NULL;
+			kitty_free(ki);
+			return;
+		}
+	} else if (kitty_is_incomplete(ki)) {
+		ictx->kitty_pending = ki;
+		return;
+	}
+
 	/* Handle query commands. */
 	if (kitty_get_action(ki) == 'q') {
-		if (kitty_get_image_id(ki) != 0)
-			input_reply(ictx, 0, "\033_Gi=%u;OK\033\\",
-			    kitty_get_image_id(ki));
-		else
-			input_reply(ictx, 0, "\033_Ga=q;OK\033\\");
+		if (input_has_kitty(ictx)) {
+			if (kitty_get_image_id(ki) != 0)
+				input_reply(ictx, 0, "\033_Gi=%u;OK\033\\",
+				    kitty_get_image_id(ki));
+			else
+				input_reply(ictx, 0, "\033_Ga=q;OK\033\\");
+		}
 		kitty_free(ki);
 		return;
 	}
@@ -2782,6 +2849,18 @@ input_apc_kitty_image(struct input_ctx *ictx)
 	if (kitty_get_action(ki) == 'T' || kitty_get_action(ki) == 't' ||
 	    kitty_get_action(ki) == 'p') {
 		screen_write_kittyimage(sctx, ki);
+	} else if (kitty_get_action(ki) == 'd') {
+		char	*apc;
+		size_t	 apclen;
+
+		if (image_kitty_delete(sctx->s, ki) && wp != NULL)
+			wp->flags |= PANE_REDRAW;
+		/* Deletion commands still need to reach attached kitty clients. */
+		apclen = xasprintf(&apc, "\033_%s\033\\", ictx->input_buf);
+		tty_kitty_passthrough(wp, apc, apclen, sctx->s->cx,
+		    sctx->s->cy);
+		free(apc);
+		kitty_free(ki);
 	} else {
 		/* For other actions (delete, etc.), pass through. */
 		char	*apc;

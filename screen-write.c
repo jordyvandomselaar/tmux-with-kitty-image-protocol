@@ -1957,7 +1957,7 @@ screen_write_collect_end(struct screen_write_ctx *ctx)
 		}
 	}
 
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_IMAGES
 	if (image_check_area(s, s->cx, s->cy, ci->used, 1) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
@@ -2484,9 +2484,9 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 		tty_write(tty_cmd_kittyimage, &ttyctx);
 	}
 
-	/* Move cursor past the image. */
-	if (kitty_get_rows(ki) > 0)
-		screen_write_cursormove(ctx, 0, s->cy + kitty_get_rows(ki), 0);
+	/* Move cursor past the resolved image footprint unless disabled. */
+	if (im != NULL && im->sy > 0 && !kitty_get_cursor_policy(ki))
+		screen_write_cursormove(ctx, 0, s->cy + im->sy, 0);
 }
 #endif
 

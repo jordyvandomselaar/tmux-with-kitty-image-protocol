@@ -41,7 +41,9 @@ struct kitty_image {
 	u_int		 image_num;   /* I=: image number */
 	u_int		 placement_id; /* p=: placement id */
 	u_int		 more;        /* m=: 1=more chunks coming, 0=last */
+	u_int		 has_more;
 	u_int		 quiet;       /* q=: suppress responses */
+	u_int		 cursor_policy; /* C=: 1=do not move cursor after display */
 	int		 z_index;     /* z=: z-index */
 	char		 compression; /* o=: 'z'=zlib, 0=none */
 	char		 delete_what; /* d=: delete target (used with a=d) */
@@ -136,12 +138,18 @@ kitty_parse_control(const char *ctrl, size_t ctrllen, struct kitty_image *ki)
 				return (-1);
 			break;
 		case 'm':
-			ki->more = strtonum(val, 0, UINT_MAX, &errstr);
+			ki->more = strtonum(val, 0, 1, &errstr);
 			if (errstr != NULL)
 				return (-1);
+			ki->has_more = 1;
 			break;
 		case 'q':
 			ki->quiet = strtonum(val, 0, UINT_MAX, &errstr);
+			if (errstr != NULL)
+				return (-1);
+			break;
+		case 'C':
+			ki->cursor_policy = strtonum(val, 0, 1, &errstr);
 			if (errstr != NULL)
 				return (-1);
 			break;
@@ -269,6 +277,107 @@ u_int
 kitty_get_rows(struct kitty_image *ki)
 {
 	return (ki->rows);
+}
+
+u_int
+kitty_get_placement_id(struct kitty_image *ki)
+{
+	return (ki->placement_id);
+}
+
+u_int
+kitty_get_image_num(struct kitty_image *ki)
+{
+	return (ki->image_num);
+}
+
+char
+kitty_get_delete_what(struct kitty_image *ki)
+{
+	return (ki->delete_what);
+}
+
+int
+kitty_get_cursor_policy(struct kitty_image *ki)
+{
+	return (ki->cursor_policy);
+}
+
+int
+kitty_has_more(struct kitty_image *ki)
+{
+	return (ki->has_more);
+}
+
+int
+kitty_is_incomplete(struct kitty_image *ki)
+{
+	return (ki->has_more && ki->more != 0);
+}
+
+int
+kitty_is_continuation(struct kitty_image *ki)
+{
+	char	*p, *end;
+
+	if (!ki->has_more || ki->ctrl == NULL)
+		return (0);
+	for (p = ki->ctrl, end = ki->ctrl + ki->ctrllen; p < end; p++) {
+		if (p == ki->ctrl || p[-1] == ',') {
+			if (p + 1 >= end || p[1] != '=')
+				return (0);
+			if (p[0] != 'm' && p[0] != 'q')
+				return (0);
+		}
+	}
+	return (1);
+}
+
+static void
+kitty_finish_chunks(struct kitty_image *ki)
+{
+	char	*p, *end;
+
+	ki->more = 0;
+	ki->has_more = 1;
+
+	if (ki->ctrl == NULL)
+		return;
+	for (p = ki->ctrl, end = ki->ctrl + ki->ctrllen; p < end; p++) {
+		if ((p == ki->ctrl || p[-1] == ',') && p + 2 < end &&
+		    p[0] == 'm' && p[1] == '=') {
+			p[2] = '0';
+			return;
+		}
+	}
+}
+
+int
+kitty_append(struct kitty_image *ki, struct kitty_image *chunk, size_t limit)
+{
+	char	*encoded;
+	size_t	 encodedlen;
+
+	if (ki == NULL || chunk == NULL || !chunk->has_more)
+		return (-1);
+	if (ki->encodedlen > limit || chunk->encodedlen > limit ||
+	    ki->encodedlen + chunk->encodedlen > limit)
+		return (-1);
+
+	if (chunk->encodedlen != 0) {
+		encodedlen = ki->encodedlen + chunk->encodedlen;
+		encoded = xrealloc(ki->encoded, encodedlen + 1);
+		memcpy(encoded + ki->encodedlen, chunk->encoded, chunk->encodedlen);
+		encoded[encodedlen] = '\0';
+		ki->encoded = encoded;
+		ki->encodedlen = encodedlen;
+	}
+
+	if (chunk->more == 0) {
+		kitty_finish_chunks(ki);
+		return (1);
+	}
+	return (0);
 }
 
 /*

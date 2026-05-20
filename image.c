@@ -63,7 +63,7 @@ image_free(struct image *im)
 	TAILQ_REMOVE(&s->images, im, entry);
 
 	switch (im->type) {
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 	case IMAGE_SIXEL:
 		sixel_free(im->data.sixel);
 		break;
@@ -202,7 +202,7 @@ image_fallback(char **ret, enum image_type type, u_int sx, u_int sy)
 	const char *type_name;
 
 	switch (type) {
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 	case IMAGE_SIXEL:
 		type_name = "SIXEL";
 		break;
@@ -267,7 +267,7 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 	im->py = s->cy;
 
 	switch (type) {
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 	case IMAGE_SIXEL:
 		im->data.sixel = data;
 		if (!hidden)
@@ -359,7 +359,7 @@ image_scroll_up(struct screen *s, u_int lines)
 {
 	struct image		*im, *im1;
 	int			 redraw = 0;
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 	struct sixel_image	*new;
 	u_int			 sx, sy;
 #endif
@@ -382,7 +382,7 @@ image_scroll_up(struct screen *s, u_int lines)
 
 		/* Image is partially scrolled off - need to crop it */
 		switch (im->type) {
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 		case IMAGE_SIXEL:
 			sx = im->sx;
 			sy = (im->py + im->sy) - lines;

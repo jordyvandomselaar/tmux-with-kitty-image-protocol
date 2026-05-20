@@ -236,7 +236,7 @@ nodist_tmux_SOURCES += compat/utf8proc.c
 endif
 
 # Enable sixel support.
-if ENABLE_SIXEL_IMAGES
+if ENABLE_SIXEL
 dist_tmux_SOURCES += image.c image-sixel.c
 else
 # If not sixel, still need image.c for kitty.

@@ -1537,7 +1537,7 @@ tty_draw_images(struct client *c, struct window_pane *wp, struct screen *s)
 
 		/* Call the appropriate rendering function based on image type */
 		switch (im->type) {
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 		case IMAGE_SIXEL:
 			tty_write_one(tty_cmd_sixelimage, c, &ttyctx);
 			break;
@@ -2152,7 +2152,7 @@ tty_cmd_rawstring(struct tty *tty, const struct tty_ctx *ctx)
 	tty_invalidate(tty);
 }
 
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 void
 tty_cmd_sixelimage(struct tty *tty, const struct tty_ctx *ctx)
 {

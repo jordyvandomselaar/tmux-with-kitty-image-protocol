@@ -49,6 +49,13 @@ $TMUX capturep -pS0 >$TMP || exit 1
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,t=f,f=100,s=1,v=1,r=1;L3RtcC9pbWc=\033\\\\after-file\\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-file/ { print NR; exit }' $TMP)" = 1 ] || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
     "printf '\033_Ga=T,t=d,f=24,s=1,v=1,r=1,C=1;AAAA\033\\\\after-stay\\n'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1

@@ -2670,9 +2670,9 @@ format_cb_version(__unused struct format_tree *ft)
 static void *
 format_cb_image_support(__unused struct format_tree *ft)
 {
-#if defined(ENABLE_SIXEL_IMAGES) && defined(ENABLE_KITTY_IMAGES)
+#if defined(ENABLE_SIXEL) && defined(ENABLE_KITTY_IMAGES)
 	return (xstrdup("kitty,sixel"));
-#elif defined(ENABLE_SIXEL_IMAGES)
+#elif defined(ENABLE_SIXEL)
 	return (xstrdup("sixel"));
 #elif defined(ENABLE_KITTY_IMAGES)
 	return (xstrdup("kitty"));
@@ -2685,7 +2685,7 @@ format_cb_image_support(__unused struct format_tree *ft)
 static void *
 format_cb_sixel_support(__unused struct format_tree *ft)
 {
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 	return (xstrdup("1"));
 #else
 	return (xstrdup("0"));

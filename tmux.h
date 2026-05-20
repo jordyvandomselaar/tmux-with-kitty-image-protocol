@@ -69,11 +69,11 @@ struct screen_write_ctx;
 struct session;
 
 /* Convenience macro: defined if any image protocol is compiled in. */
-#if defined(ENABLE_SIXEL_IMAGES) || defined(ENABLE_KITTY_IMAGES)
+#if defined(ENABLE_SIXEL) || defined(ENABLE_KITTY_IMAGES)
 #define ENABLE_IMAGES
 #endif
 
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 struct sixel_image;
 #endif
 
@@ -980,7 +980,7 @@ struct image {
 	enum image_type		 type;
 	struct screen		*s;
 	union {
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 		struct sixel_image	*sixel;
 #endif
 #ifdef ENABLE_KITTY_IMAGES
@@ -2748,7 +2748,7 @@ void	tty_cmd_rawstring(struct tty *, const struct tty_ctx *);
 int	tty_set_client_cb(struct tty_ctx *, struct client *);
 #endif
 
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 void	tty_cmd_sixelimage(struct tty *, const struct tty_ctx *);
 #endif
 
@@ -3362,7 +3362,7 @@ void	 screen_write_setselection(struct screen_write_ctx *, const char *,
 	     u_char *, u_int);
 void	 screen_write_rawstring(struct screen_write_ctx *, u_char *, u_int,
 	     int);
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 void	 screen_write_sixelimage(struct screen_write_ctx *,
 	     struct sixel_image *, u_int);
 #endif
@@ -3868,7 +3868,7 @@ int		 image_kitty_delete(struct screen *, struct kitty_image *);
 #endif
 #endif
 
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 /* image-sixel.c */
 #define SIXEL_COLOUR_REGISTERS 1024
 struct sixel_image *sixel_parse(const char *, size_t, u_int, u_int, u_int);
@@ -3888,12 +3888,14 @@ struct kitty_image *kitty_parse(const u_char *, size_t, u_int, u_int);
 void		 kitty_free(struct kitty_image *);
 void		 kitty_size_in_cells(struct kitty_image *, u_int *, u_int *);
 char		 kitty_get_action(struct kitty_image *);
+char		 kitty_get_medium(struct kitty_image *);
 u_int		 kitty_get_image_id(struct kitty_image *);
 u_int		 kitty_get_rows(struct kitty_image *);
 u_int		 kitty_get_placement_id(struct kitty_image *);
 u_int		 kitty_get_image_num(struct kitty_image *);
 char		 kitty_get_delete_what(struct kitty_image *);
 int		 kitty_get_cursor_policy(struct kitty_image *);
+u_int		 kitty_get_quiet(struct kitty_image *);
 int		 kitty_has_more(struct kitty_image *);
 int		 kitty_is_incomplete(struct kitty_image *);
 int		 kitty_is_continuation(struct kitty_image *);

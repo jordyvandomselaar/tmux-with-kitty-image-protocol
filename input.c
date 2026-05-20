@@ -2048,7 +2048,7 @@ input_csi_dispatch_sm_private(struct input_ctx *ictx)
 static void
 input_csi_dispatch_sm_graphics(__unused struct input_ctx *ictx)
 {
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 	int	n, m, o;
 
 	if (ictx->param_list_len > 3)
@@ -2573,7 +2573,7 @@ input_dcs_dispatch(struct input_ctx *ictx)
 	const char		 prefix[] = "tmux;";
 	const u_int		 prefixlen = (sizeof prefix) - 1;
 	long long		 allow_passthrough = 0;
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 	struct window		*w;
 	struct sixel_image	*si;
 	int			 p2;
@@ -2589,7 +2589,7 @@ input_dcs_dispatch(struct input_ctx *ictx)
 		return (0);
 	}
 
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 	if (wp != NULL && buf[0] == 'q' && ictx->interm_len == 0) {
 		w = wp->window;
 		if (input_split(ictx) != 0)
@@ -2742,7 +2742,7 @@ input_enter_apc(struct input_ctx *ictx)
 static int
 input_da1_has_sixel(__unused struct input_ctx *ictx)
 {
-#ifdef ENABLE_SIXEL_IMAGES
+#ifdef ENABLE_SIXEL
 	struct window_pane	*wp = ictx->wp;
 	struct client		*c;
 
@@ -2783,6 +2783,67 @@ input_has_kitty(struct input_ctx *ictx)
 			return (1);
 	}
 	return (0);
+}
+
+static void
+input_reply_kitty(struct input_ctx *ictx, struct kitty_image *ki,
+    const char *message)
+{
+	u_int	 image_id = kitty_get_image_id(ki);
+	u_int	 image_num = kitty_get_image_num(ki);
+	u_int	 placement_id = kitty_get_placement_id(ki);
+	char	 action = kitty_get_action(ki);
+
+	if (image_id != 0 && placement_id != 0) {
+		input_reply(ictx, 0, "\033_Gi=%u,p=%u;%s\033\\",
+		    image_id, placement_id, message);
+		return;
+	}
+	if (image_id != 0) {
+		input_reply(ictx, 0, "\033_Gi=%u;%s\033\\", image_id,
+		    message);
+		return;
+	}
+	if (image_num != 0 && placement_id != 0) {
+		input_reply(ictx, 0, "\033_GI=%u,p=%u;%s\033\\",
+		    image_num, placement_id, message);
+		return;
+	}
+	if (image_num != 0) {
+		input_reply(ictx, 0, "\033_GI=%u;%s\033\\", image_num,
+		    message);
+		return;
+	}
+	input_reply(ictx, 0, "\033_Ga=%c;%s\033\\", action, message);
+}
+
+static void
+input_reply_kitty_ok(struct input_ctx *ictx, struct kitty_image *ki)
+{
+	if (kitty_get_quiet(ki) != 0)
+		return;
+	input_reply_kitty(ictx, ki, "OK");
+}
+
+static void
+input_reply_kitty_error(struct input_ctx *ictx, struct kitty_image *ki,
+    const char *message)
+{
+	if (kitty_get_quiet(ki) == 2)
+		return;
+	input_reply_kitty(ictx, ki, message);
+}
+
+static int
+input_kitty_medium_supported(struct kitty_image *ki)
+{
+	switch (kitty_get_action(ki)) {
+	case 'T':
+	case 't':
+		return (kitty_get_medium(ki) == 'd');
+	default:
+		return (1);
+	}
 }
 #endif
 
@@ -2840,13 +2901,17 @@ input_apc_kitty_image(struct input_ctx *ictx)
 
 	/* Handle query commands. */
 	if (kitty_get_action(ki) == 'q') {
-		if (input_has_kitty(ictx)) {
-			if (kitty_get_image_id(ki) != 0)
-				input_reply(ictx, 0, "\033_Gi=%u;OK\033\\",
-				    kitty_get_image_id(ki));
-			else
-				input_reply(ictx, 0, "\033_Ga=q;OK\033\\");
-		}
+		if (kitty_get_medium(ki) != 'd') {
+			input_reply_kitty_error(ictx, ki,
+			    "EINVAL:unsupported transmission medium");
+		} else if (input_has_kitty(ictx))
+			input_reply_kitty_ok(ictx, ki);
+		kitty_free(ki);
+		return;
+	}
+	if (!input_kitty_medium_supported(ki)) {
+		input_reply_kitty_error(ictx, ki,
+		    "EINVAL:unsupported transmission medium");
 		kitty_free(ki);
 		return;
 	}
@@ -2854,12 +2919,16 @@ input_apc_kitty_image(struct input_ctx *ictx)
 	/* Store image placements and trigger a redraw. */
 	if (kitty_get_action(ki) == 'T' || kitty_get_action(ki) == 'p') {
 		screen_write_kittyimage(sctx, ki);
+		if (input_has_kitty(ictx))
+			input_reply_kitty_ok(ictx, ki);
 	} else if (kitty_get_action(ki) == 't') {
 		char	*apc;
 		size_t	 apclen;
 
 		if (kitty_get_image_id(ki) != 0 || kitty_get_image_num(ki) != 0) {
 			screen_write_kittyimage_upload(sctx, ki);
+			if (input_has_kitty(ictx))
+				input_reply_kitty_ok(ictx, ki);
 			return;
 		}
 
@@ -2869,6 +2938,8 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			    sctx->s->cy);
 			free(apc);
 		}
+		if (input_has_kitty(ictx))
+			input_reply_kitty_ok(ictx, ki);
 		kitty_free(ki);
 	} else if (kitty_get_action(ki) == 'd') {
 		char	*apc;
@@ -2881,6 +2952,8 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		tty_kitty_passthrough(wp, apc, apclen, sctx->s->cx,
 		    sctx->s->cy);
 		free(apc);
+		if (input_has_kitty(ictx))
+			input_reply_kitty_ok(ictx, ki);
 		kitty_free(ki);
 	} else {
 		/* For other actions (delete, etc.), pass through. */

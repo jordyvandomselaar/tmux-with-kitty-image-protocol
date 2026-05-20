@@ -269,6 +269,12 @@ kitty_get_action(struct kitty_image *ki)
 	return (ki->action);
 }
 
+char
+kitty_get_medium(struct kitty_image *ki)
+{
+	return (ki->medium);
+}
+
 u_int
 kitty_get_image_id(struct kitty_image *ki)
 {
@@ -303,6 +309,12 @@ int
 kitty_get_cursor_policy(struct kitty_image *ki)
 {
 	return (ki->cursor_policy);
+}
+
+u_int
+kitty_get_quiet(struct kitty_image *ki)
+{
+	return (ki->quiet);
 }
 
 int

@@ -2460,6 +2460,30 @@ screen_write_sixelimage(struct screen_write_ctx *ctx, struct sixel_image *si,
 
 #ifdef ENABLE_KITTY_IMAGES
 void
+screen_write_kittyimage_upload(struct screen_write_ctx *ctx,
+    struct kitty_image *ki)
+{
+	struct screen		*s = ctx->s;
+	struct tty_ctx		 ttyctx;
+	struct image		*im;
+
+	if (ki == NULL)
+		return;
+
+	im = image_store_kitty_upload(s, ki);
+	if (im != NULL && ctx->wp != NULL) {
+		screen_write_collect_flush(ctx, 0, __func__);
+		screen_write_initctx(ctx, &ttyctx, 0);
+		ttyctx.ptr = im;
+		ttyctx.arg = ctx->wp;
+		ttyctx.ocx = s->cx;
+		ttyctx.ocy = s->cy;
+		ttyctx.set_client_cb = tty_set_client_cb;
+		tty_write(tty_cmd_kittyimage, &ttyctx);
+	}
+}
+
+void
 screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 {
 	struct screen		*s = ctx->s;

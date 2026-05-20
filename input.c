@@ -2858,6 +2858,11 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		char	*apc;
 		size_t	 apclen;
 
+		if (kitty_get_image_id(ki) != 0 || kitty_get_image_num(ki) != 0) {
+			screen_write_kittyimage_upload(sctx, ki);
+			return;
+		}
+
 		apc = kitty_print(ki, &apclen);
 		if (apc != NULL) {
 			tty_kitty_passthrough(wp, apc, apclen, sctx->s->cx,

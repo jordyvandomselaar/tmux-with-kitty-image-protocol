@@ -164,8 +164,18 @@ image_kitty_delete(struct screen *s, struct kitty_image *ki)
 static int
 image_kitty_replace(struct screen *s, struct kitty_image *ki)
 {
+	char	 action;
+
 	if (s == NULL || ki == NULL)
 		return (0);
+
+	action = kitty_get_action(ki);
+	if (action == 'T' || action == 't') {
+		if (kitty_get_image_id(ki) != 0)
+			return (image_remove_kitty(s, ki, 'i'));
+		if (kitty_get_image_num(ki) != 0)
+			return (image_remove_kitty(s, ki, 'I'));
+	}
 	return (image_remove_kitty(s, ki, '\0'));
 }
 #endif
@@ -242,8 +252,8 @@ image_fallback(char **ret, enum image_type type, u_int sx, u_int sy)
 	free(label);
 }
 
-struct image*
-image_store(struct screen *s, enum image_type type, void *data)
+static struct image *
+image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 {
 	struct image	*im;
 
@@ -251,6 +261,7 @@ image_store(struct screen *s, enum image_type type, void *data)
 
 	im->type = type;
 	im->s = s;
+	im->hidden = hidden;
 
 	im->px = s->cx;
 	im->py = s->cy;
@@ -259,21 +270,24 @@ image_store(struct screen *s, enum image_type type, void *data)
 #ifdef ENABLE_SIXEL_IMAGES
 	case IMAGE_SIXEL:
 		im->data.sixel = data;
-		sixel_size_in_cells(im->data.sixel, &im->sx, &im->sy);
+		if (!hidden)
+			sixel_size_in_cells(im->data.sixel, &im->sx, &im->sy);
 		break;
 #endif
 #ifdef ENABLE_KITTY_IMAGES
 	case IMAGE_KITTY:
 		image_kitty_replace(s, data);
 		im->data.kitty = data;
-		kitty_size_in_cells(im->data.kitty, &im->sx, &im->sy);
+		if (!hidden)
+			kitty_size_in_cells(im->data.kitty, &im->sx, &im->sy);
 		break;
 #endif
 	default:
 		break;
 	}
 
-	image_fallback(&im->fallback, type, im->sx, im->sy);
+	if (!hidden)
+		image_fallback(&im->fallback, type, im->sx, im->sy);
 
 	image_log(im, __func__, NULL);
 	TAILQ_INSERT_TAIL(&s->images, im, entry);
@@ -285,6 +299,20 @@ image_store(struct screen *s, enum image_type type, void *data)
 	return (im);
 }
 
+struct image*
+image_store(struct screen *s, enum image_type type, void *data)
+{
+	return (image_store1(s, type, data, 0));
+}
+
+#ifdef ENABLE_KITTY_IMAGES
+struct image*
+image_store_kitty_upload(struct screen *s, struct kitty_image *ki)
+{
+	return (image_store1(s, IMAGE_KITTY, ki, 1));
+}
+#endif
+
 int
 image_check_line(struct screen *s, u_int py, u_int ny)
 {
@@ -292,6 +320,8 @@ image_check_line(struct screen *s, u_int py, u_int ny)
 	int		 redraw = 0, in;
 
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
+		if (im->hidden)
+			continue;
 		in = (py + ny > im->py && py < im->py + im->sy);
 		image_log(im, __func__, "py=%u, ny=%u, in=%d", py, ny, in);
 		if (in) {
@@ -309,6 +339,8 @@ image_check_area(struct screen *s, u_int px, u_int py, u_int nx, u_int ny)
 	int		 redraw = 0, in;
 
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
+		if (im->hidden)
+			continue;
 		in = (py < im->py + im->sy &&
 		    py + ny > im->py &&
 		    px < im->px + im->sx &&
@@ -333,6 +365,8 @@ image_scroll_up(struct screen *s, u_int lines)
 #endif
 
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
+		if (im->hidden)
+			continue;
 		if (im->py >= lines) {
 			image_log(im, __func__, "1, lines=%u", lines);
 			im->py -= lines;

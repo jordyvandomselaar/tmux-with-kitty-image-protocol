@@ -988,6 +988,7 @@ struct image {
 #endif
 	} data;
 	char			*fallback;
+	int			 hidden;
 
 	u_int			 px;
 	u_int			 py;
@@ -3366,6 +3367,8 @@ void	 screen_write_sixelimage(struct screen_write_ctx *,
 	     struct sixel_image *, u_int);
 #endif
 #ifdef ENABLE_KITTY_IMAGES
+void	 screen_write_kittyimage_upload(struct screen_write_ctx *,
+	     struct kitty_image *);
 void	 screen_write_kittyimage(struct screen_write_ctx *,
 	     struct kitty_image *);
 #endif
@@ -3853,6 +3856,10 @@ char		*regsub(const char *, const char *, const char *, int);
 /* image.c */
 int		 image_free_all(struct screen *);
 struct image	*image_store(struct screen *, enum image_type, void *);
+#ifdef ENABLE_KITTY_IMAGES
+struct image	*image_store_kitty_upload(struct screen *,
+		     struct kitty_image *);
+#endif
 int		 image_check_line(struct screen *, u_int, u_int);
 int		 image_check_area(struct screen *, u_int, u_int, u_int, u_int);
 int		 image_scroll_up(struct screen *, u_int);

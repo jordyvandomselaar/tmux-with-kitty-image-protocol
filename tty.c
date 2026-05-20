@@ -2177,6 +2177,9 @@ tty_cmd_sixelimage(struct tty *tty, const struct tty_ctx *ctx)
 		return;
 	log_debug("%s: clamping to %u,%u-%u,%u", __func__, i, j, rx, ry);
 
+	if (fallback == 1 && im->hidden)
+		return;
+
 	if (fallback == 1) {
 		data = xstrdup(im->fallback);
 		size = strlen(data);
@@ -2229,6 +2232,9 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 
 	log_debug("%s: image at %u,%u (fallback=%d)", __func__, cx, cy,
 	    fallback);
+
+	if (fallback == 1 && im->hidden)
+		return;
 
 	if (fallback == 1) {
 		/* Use text fallback for non-kitty terminals. */

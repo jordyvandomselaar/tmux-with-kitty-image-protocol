@@ -23,6 +23,8 @@
 
 #include "tmux.h"
 
+#define KITTY_CHUNK_LIMIT 4096
+
 /*
  * kitty_image stores the raw decoded pixel data and metadata from a kitty
  * graphics protocol APC sequence. It is used to re-emit the sequence to the
@@ -352,6 +354,60 @@ kitty_finish_chunks(struct kitty_image *ki)
 	}
 }
 
+static char *
+kitty_control_with_more(struct kitty_image *ki, int more, size_t *outlen)
+{
+	char	*ctrl;
+	char	*p, *end;
+	size_t	 offset;
+
+	for (p = ki->ctrl, end = ki->ctrl + ki->ctrllen; p < end; p++) {
+		if ((p == ki->ctrl || p[-1] == ',') && p + 2 < end &&
+		    p[0] == 'm' && p[1] == '=') {
+			ctrl = xmalloc(ki->ctrllen + 1);
+			memcpy(ctrl, ki->ctrl, ki->ctrllen);
+			ctrl[ki->ctrllen] = '\0';
+			offset = p - ki->ctrl;
+			ctrl[offset + 2] = more ? '1' : '0';
+			*outlen = ki->ctrllen;
+			return (ctrl);
+		}
+	}
+
+	if (ki->ctrllen == 0)
+		*outlen = xasprintf(&ctrl, "m=%d", more ? 1 : 0);
+	else
+		*outlen = xasprintf(&ctrl, "%s,m=%d", ki->ctrl, more ? 1 : 0);
+	return (ctrl);
+}
+
+static char *
+kitty_control_for_chunk(struct kitty_image *ki, int first, int more,
+    size_t *outlen)
+{
+	char	*ctrl;
+
+	if (first)
+		return (kitty_control_with_more(ki, more, outlen));
+
+	if (ki->action == 'f' && ki->quiet != 0) {
+		*outlen = xasprintf(&ctrl, "a=f,m=%d,q=%u", more ? 1 : 0,
+		    ki->quiet);
+		return (ctrl);
+	}
+	if (ki->action == 'f') {
+		*outlen = xasprintf(&ctrl, "a=f,m=%d", more ? 1 : 0);
+		return (ctrl);
+	}
+	if (ki->quiet != 0) {
+		*outlen = xasprintf(&ctrl, "m=%d,q=%u", more ? 1 : 0,
+		    ki->quiet);
+		return (ctrl);
+	}
+	*outlen = xasprintf(&ctrl, "m=%d", more ? 1 : 0);
+	return (ctrl);
+}
+
 int
 kitty_append(struct kitty_image *ki, struct kitty_image *chunk, size_t limit)
 {
@@ -381,14 +437,15 @@ kitty_append(struct kitty_image *ki, struct kitty_image *chunk, size_t limit)
 }
 
 /*
- * Serialize a kitty_image back into an APC escape sequence for transmission
- * to the terminal. This recreates the original command that was parsed.
+ * Serialize a kitty_image back into APC escape sequences for transmission
+ * to the terminal, splitting large payloads into protocol-sized chunks.
  */
 char *
 kitty_print(struct kitty_image *ki, size_t *outlen)
 {
-	char	*out;
-	size_t	 total, pos;
+	char	*out, *ctrl;
+	size_t	 total, pos, offset, remaining, ctrllen, chunk;
+	int	 first = 1, more;
 
 	if (ki == NULL || ki->ctrl == NULL)
 		return (NULL);
@@ -400,25 +457,61 @@ kitty_print(struct kitty_image *ki, size_t *outlen)
 	}
 	total += 2;  /* \033\\ */
 
-	out = xmalloc(total + 1);
-	*outlen = total;
+	if (ki->encodedlen <= KITTY_CHUNK_LIMIT || ki->encoded == NULL ||
+	    ki->encodedlen == 0) {
+		out = xmalloc(total + 1);
+		*outlen = total;
 
-	/* Build the sequence */
-	pos = 0;
-	memcpy(out + pos, "\033_G", 3);
-	pos += 3;
-	memcpy(out + pos, ki->ctrl, ki->ctrllen);
-	pos += ki->ctrllen;
+		/* Build the sequence */
+		pos = 0;
+		memcpy(out + pos, "\033_G", 3);
+		pos += 3;
+		memcpy(out + pos, ki->ctrl, ki->ctrllen);
+		pos += ki->ctrllen;
 
-	if (ki->encoded != NULL && ki->encodedlen > 0) {
-		out[pos++] = ';';
-		memcpy(out + pos, ki->encoded, ki->encodedlen);
-		pos += ki->encodedlen;
+		if (ki->encoded != NULL && ki->encodedlen > 0) {
+			out[pos++] = ';';
+			memcpy(out + pos, ki->encoded, ki->encodedlen);
+			pos += ki->encodedlen;
+		}
+
+		memcpy(out + pos, "\033\\", 2);
+		pos += 2;
+		out[pos] = '\0';
+
+		return (out);
 	}
 
-	memcpy(out + pos, "\033\\", 2);
-	pos += 2;
-	out[pos] = '\0';
+	out = xmalloc(1);
+	total = 0;
+	offset = 0;
+	while (offset < ki->encodedlen) {
+		remaining = ki->encodedlen - offset;
+		chunk = remaining > KITTY_CHUNK_LIMIT ? KITTY_CHUNK_LIMIT : remaining;
+		more = (chunk < remaining);
+		if (more)
+			chunk -= (chunk % 4);
+		ctrl = kitty_control_for_chunk(ki, first, more, &ctrllen);
+
+		out = xrealloc(out, total + 3 + ctrllen + 1 + chunk + 2 + 1);
+		pos = total;
+		memcpy(out + pos, "\033_G", 3);
+		pos += 3;
+		memcpy(out + pos, ctrl, ctrllen);
+		pos += ctrllen;
+		out[pos++] = ';';
+		memcpy(out + pos, ki->encoded + offset, chunk);
+		pos += chunk;
+		memcpy(out + pos, "\033\\", 2);
+		pos += 2;
+		out[pos] = '\0';
+
+		free(ctrl);
+		offset += chunk;
+		total = pos;
+		first = 0;
+	}
+	*outlen = total;
 
 	return (out);
 }

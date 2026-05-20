@@ -2802,8 +2802,11 @@ input_apc_kitty_image(struct input_ctx *ictx)
 	w = wp->window;
 	ki = kitty_parse(ictx->input_buf + 1, ictx->input_len - 1,
 	    w->xpixel, w->ypixel);
-	if (ki == NULL)
+	if (ki == NULL) {
+		kitty_free(ictx->kitty_pending);
+		ictx->kitty_pending = NULL;
 		return;
+	}
 
 	if (ictx->kitty_pending != NULL) {
 		if (!kitty_is_continuation(ki)) {
@@ -2827,6 +2830,9 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			kitty_free(ki);
 			return;
 		}
+	} else if (kitty_is_continuation(ki)) {
+		kitty_free(ki);
+		return;
 	} else if (kitty_is_incomplete(ki)) {
 		ictx->kitty_pending = ki;
 		return;
@@ -2846,9 +2852,19 @@ input_apc_kitty_image(struct input_ctx *ictx)
 	}
 
 	/* Store image placements and trigger a redraw. */
-	if (kitty_get_action(ki) == 'T' || kitty_get_action(ki) == 't' ||
-	    kitty_get_action(ki) == 'p') {
+	if (kitty_get_action(ki) == 'T' || kitty_get_action(ki) == 'p') {
 		screen_write_kittyimage(sctx, ki);
+	} else if (kitty_get_action(ki) == 't') {
+		char	*apc;
+		size_t	 apclen;
+
+		apc = kitty_print(ki, &apclen);
+		if (apc != NULL) {
+			tty_kitty_passthrough(wp, apc, apclen, sctx->s->cx,
+			    sctx->s->cy);
+			free(apc);
+		}
+		kitty_free(ki);
 	} else if (kitty_get_action(ki) == 'd') {
 		char	*apc;
 		size_t	 apclen;

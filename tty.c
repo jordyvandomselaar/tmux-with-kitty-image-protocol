@@ -1500,7 +1500,10 @@ tty_set_client_cb(struct tty_ctx *ttyctx, struct client *c)
 	ttyctx->bigger = tty_window_offset(&c->tty, &ttyctx->wox, &ttyctx->woy,
 	    &ttyctx->wsx, &ttyctx->wsy);
 
+	ttyctx->xoff = ttyctx->rxoff = wp->xoff;
 	ttyctx->yoff = ttyctx->ryoff = wp->yoff;
+	ttyctx->sx = wp->sx;
+	ttyctx->sy = wp->sy;
 	if (status_at_line(c) == 0)
 		ttyctx->yoff += status_line_size(c);
 

@@ -106,9 +106,22 @@ image_match_kitty(struct image *im, struct kitty_image *ki, char what)
 		return (image_num != 0 &&
 		    kitty_get_image_num(existing) == image_num);
 	case 'p':
-		return (placement_id != 0 &&
-		    kitty_get_placement_id(existing) == placement_id);
+		if (placement_id == 0)
+			return (0);
+		if (image_id != 0)
+			return (kitty_get_image_id(existing) == image_id &&
+			    kitty_get_placement_id(existing) == placement_id);
+		if (image_num != 0)
+			return (kitty_get_image_num(existing) == image_num &&
+			    kitty_get_placement_id(existing) == placement_id);
+		return (kitty_get_placement_id(existing) == placement_id);
 	default:
+		if (placement_id != 0 && image_id != 0)
+			return (kitty_get_image_id(existing) == image_id &&
+			    kitty_get_placement_id(existing) == placement_id);
+		if (placement_id != 0 && image_num != 0)
+			return (kitty_get_image_num(existing) == image_num &&
+			    kitty_get_placement_id(existing) == placement_id);
 		if (placement_id != 0)
 			return (kitty_get_placement_id(existing) == placement_id);
 		if (image_id != 0 && kitty_get_placement_id(existing) == 0)

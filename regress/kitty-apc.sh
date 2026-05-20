@@ -42,10 +42,24 @@ test_apc '\033_Gbad\033\\after-malformed\n' 'after-malformed' 'Gbad'
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d \
+    "printf '\033_Ga=t,i=1,t=d,f=24,s=1,v=1;AAAA\033\\\\after-transmit\\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-transmit/ { print NR; exit }' $TMP)" = 1 ] || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
     "printf '\033_Ga=T,t=d,f=24,s=1,v=1,m=1;AA\033\\\\\033_Gm=0;AA\033\\\\after-chunk\\n'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-chunk/ { print NR; exit }' $TMP)" = 2 ] || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,t=d,f=24,s=1,v=1,m=1;AA\033\\\\\033_Gbad\033\\\\\033_Gm=0;AA\033\\\\after-abort\\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-abort/ { print NR; exit }' $TMP)" = 1 ] || exit 1
 
 $TMUX kill-server 2>/dev/null
 

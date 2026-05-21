@@ -2915,7 +2915,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			return;
 		}
 
-		apc = kitty_print(ki, &apclen);
+		apc = kitty_print_quiet(ki, &apclen);
 		if (apc != NULL) {
 			tty_kitty_passthrough(wp, apc, apclen, sctx->s->cx,
 			    sctx->s->cy);
@@ -2939,7 +2939,11 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		if (redraw && wp != NULL)
 			wp->flags |= PANE_REDRAW;
 		/* Deletion commands still need to reach attached kitty clients. */
-		apclen = xasprintf(&apc, "\033_%s\033\\", ictx->input_buf);
+		apc = kitty_print_quiet(ki, &apclen);
+		if (apc == NULL) {
+			kitty_free(ki);
+			return;
+		}
 		tty_kitty_passthrough(wp, apc, apclen, sctx->s->cx,
 		    sctx->s->cy);
 		free(apc);

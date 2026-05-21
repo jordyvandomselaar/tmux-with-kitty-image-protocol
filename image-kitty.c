@@ -29,6 +29,13 @@
 
 #define KITTY_CHUNK_LIMIT 4096
 #define KITTY_PNG_HEADER_SIZE 24
+#define KITTY_QUIET_SUPPRESS_RESPONSES 2
+#define KITTY_QUIET_UNCHANGED ((u_int)-1)
+
+struct kitty_control_override {
+	char		 key;
+	const char	*value;
+};
 
 /*
  * kitty_image stores the raw decoded pixel data and metadata from a kitty
@@ -53,6 +60,10 @@ struct kitty_image {
 	u_int		 cursor_policy; /* C=: 1=do not move cursor after display */
 	u_int		 delete_x;    /* x=: delete cell/column/range start */
 	u_int		 delete_y;    /* y=: delete cell/row/range end */
+	u_int		 source_w;    /* w=: source rectangle width */
+	u_int		 source_h;    /* h=: source rectangle height */
+	u_int		 cell_x;      /* X=: horizontal cell offset */
+	u_int		 cell_y;      /* Y=: vertical cell offset */
 	int		 z_index;     /* z=: z-index */
 	char		 compression; /* o=: 'z'=zlib, 0=none */
 	char		 delete_what; /* d=: delete target (used with a=d) */
@@ -169,6 +180,26 @@ kitty_parse_control(const char *ctrl, size_t ctrllen, struct kitty_image *ki)
 			break;
 		case 'y':
 			ki->delete_y = strtonum(val, 0, UINT_MAX, &errstr);
+			if (errstr != NULL)
+				return (-1);
+			break;
+		case 'w':
+			ki->source_w = strtonum(val, 0, UINT_MAX, &errstr);
+			if (errstr != NULL)
+				return (-1);
+			break;
+		case 'h':
+			ki->source_h = strtonum(val, 0, UINT_MAX, &errstr);
+			if (errstr != NULL)
+				return (-1);
+			break;
+		case 'X':
+			ki->cell_x = strtonum(val, 0, UINT_MAX, &errstr);
+			if (errstr != NULL)
+				return (-1);
+			break;
+		case 'Y':
+			ki->cell_y = strtonum(val, 0, UINT_MAX, &errstr);
 			if (errstr != NULL)
 				return (-1);
 			break;
@@ -531,54 +562,139 @@ kitty_finish_chunks(struct kitty_image *ki)
 	}
 }
 
-static char *
-kitty_control_with_more(struct kitty_image *ki, int more, size_t *outlen)
+static void
+kitty_control_append(char **ctrl, size_t *len, const char *data,
+    size_t datalen)
 {
-	char	*ctrl;
-	char	*p, *end;
-	size_t	 offset;
+	size_t	oldlen;
 
-	for (p = ki->ctrl, end = ki->ctrl + ki->ctrllen; p < end; p++) {
-		if ((p == ki->ctrl || p[-1] == ',') && p + 2 < end &&
-		    p[0] == 'm' && p[1] == '=') {
-			ctrl = xmalloc(ki->ctrllen + 1);
-			memcpy(ctrl, ki->ctrl, ki->ctrllen);
-			ctrl[ki->ctrllen] = '\0';
-			offset = p - ki->ctrl;
-			ctrl[offset + 2] = more ? '1' : '0';
-			*outlen = ki->ctrllen;
-			return (ctrl);
-		}
+	oldlen = *len;
+	*ctrl = xrealloc(*ctrl, oldlen + (oldlen != 0) + datalen + 1);
+	if (oldlen != 0)
+		(*ctrl)[(*len)++] = ',';
+	memcpy(*ctrl + *len, data, datalen);
+	*len += datalen;
+	(*ctrl)[*len] = '\0';
+}
+
+static int
+kitty_control_has_override(const struct kitty_control_override *overrides,
+    size_t noverrides, const char *token, size_t tokenlen)
+{
+	size_t	i;
+
+	if (tokenlen < 2 || token[1] != '=')
+		return (0);
+	for (i = 0; i < noverrides; i++) {
+		if (overrides[i].key == token[0])
+			return (1);
+	}
+	return (0);
+}
+
+static char *
+kitty_control_with_overrides(struct kitty_image *ki,
+    const struct kitty_control_override *overrides, size_t noverrides,
+    size_t *outlen)
+{
+	const char	*p, *end, *next;
+	char		*ctrl, *tmp;
+	size_t		 len, tokenlen, i, tmplen;
+
+	ctrl = xmalloc(1);
+	ctrl[0] = '\0';
+	len = 0;
+
+	p = ki->ctrl;
+	end = ki->ctrl + ki->ctrllen;
+	while (p < end) {
+		next = memchr(p, ',', end - p);
+		if (next == NULL)
+			next = end;
+		tokenlen = next - p;
+		if (tokenlen != 0 && !kitty_control_has_override(overrides,
+		    noverrides, p, tokenlen))
+			kitty_control_append(&ctrl, &len, p, tokenlen);
+		p = next;
+		if (p < end && *p == ',')
+			p++;
 	}
 
-	if (ki->ctrllen == 0)
-		*outlen = xasprintf(&ctrl, "m=%d", more ? 1 : 0);
-	else
-		*outlen = xasprintf(&ctrl, "%s,m=%d", ki->ctrl, more ? 1 : 0);
+	for (i = 0; i < noverrides; i++) {
+		if (overrides[i].value == NULL)
+			continue;
+		tmplen = xasprintf(&tmp, "%c=%s", overrides[i].key,
+		    overrides[i].value);
+		kitty_control_append(&ctrl, &len, tmp, tmplen);
+		free(tmp);
+	}
+
+	*outlen = len;
 	return (ctrl);
+}
+
+static size_t
+kitty_control_add_quiet(struct kitty_control_override *overrides, size_t n,
+    u_int quiet, char *quietbuf, size_t quietbuflen)
+{
+	if (quiet == KITTY_QUIET_UNCHANGED)
+		return (n);
+	snprintf(quietbuf, quietbuflen, "%u", quiet);
+	overrides[n].key = 'q';
+	overrides[n].value = quietbuf;
+	return (n + 1);
+}
+
+static char *
+kitty_control_for_command(struct kitty_image *ki, u_int quiet,
+    const struct kitty_control_override *extra, size_t nextra, size_t *outlen)
+{
+	struct kitty_control_override	 overrides[16];
+	char				 quietbuf[32];
+	size_t				 i, n;
+
+	n = kitty_control_add_quiet(overrides, 0, quiet, quietbuf,
+	    sizeof quietbuf);
+	for (i = 0; i < nextra; i++)
+		overrides[n++] = extra[i];
+	return (kitty_control_with_overrides(ki, overrides, n, outlen));
 }
 
 static char *
 kitty_control_for_chunk(struct kitty_image *ki, int first, int more,
+    u_int quiet, const struct kitty_control_override *extra, size_t nextra,
     size_t *outlen)
 {
-	char	*ctrl;
+	struct kitty_control_override	 overrides[16];
+	char				 morebuf[2], quietbuf[32];
+	char				*ctrl;
+	size_t				 i, n;
 
-	if (first)
-		return (kitty_control_with_more(ki, more, outlen));
+	if (first) {
+		snprintf(morebuf, sizeof morebuf, "%d", more ? 1 : 0);
+		overrides[0].key = 'm';
+		overrides[0].value = morebuf;
+		n = kitty_control_add_quiet(overrides, 1, quiet, quietbuf,
+		    sizeof quietbuf);
+		for (i = 0; i < nextra; i++)
+			overrides[n++] = extra[i];
+		return (kitty_control_with_overrides(ki, overrides, n, outlen));
+	}
 
-	if (ki->action == 'f' && ki->quiet != 0) {
+	if (quiet == KITTY_QUIET_UNCHANGED)
+		quiet = ki->quiet;
+	if (ki->action == 'f' && quiet != 0) {
 		*outlen = xasprintf(&ctrl, "a=f,m=%d,q=%u", more ? 1 : 0,
-		    ki->quiet);
+		    quiet);
 		return (ctrl);
 	}
 	if (ki->action == 'f') {
 		*outlen = xasprintf(&ctrl, "a=f,m=%d", more ? 1 : 0);
 		return (ctrl);
 	}
-	if (ki->quiet != 0) {
+	if (quiet != 0) {
 		*outlen = xasprintf(&ctrl, "m=%d,q=%u", more ? 1 : 0,
-		    ki->quiet);
+		    quiet);
 		return (ctrl);
 	}
 	*outlen = xasprintf(&ctrl, "m=%d", more ? 1 : 0);
@@ -613,12 +729,9 @@ kitty_append(struct kitty_image *ki, struct kitty_image *chunk, size_t limit)
 	return (0);
 }
 
-/*
- * Serialize a kitty_image back into APC escape sequences for transmission
- * to the terminal, splitting large payloads into protocol-sized chunks.
- */
-char *
-kitty_print(struct kitty_image *ki, size_t *outlen)
+static char *
+kitty_print_with_overrides(struct kitty_image *ki, size_t *outlen, u_int quiet,
+    const struct kitty_control_override *extra, size_t nextra)
 {
 	char	*out, *ctrl;
 	size_t	 total, pos, offset, remaining, ctrllen, chunk;
@@ -627,8 +740,10 @@ kitty_print(struct kitty_image *ki, size_t *outlen)
 	if (ki == NULL || ki->ctrl == NULL)
 		return (NULL);
 
+	ctrl = kitty_control_for_command(ki, quiet, extra, nextra, &ctrllen);
+
 	/* Calculate total length: ESC _ G + ctrl + ; + encoded + ESC \ */
-	total = 3 + ki->ctrllen;  /* \033_G + ctrl */
+	total = 3 + ctrllen;  /* \033_G + ctrl */
 	if (ki->encoded != NULL && ki->encodedlen > 0) {
 		total += 1 + ki->encodedlen;  /* ; + encoded */
 	}
@@ -643,8 +758,8 @@ kitty_print(struct kitty_image *ki, size_t *outlen)
 		pos = 0;
 		memcpy(out + pos, "\033_G", 3);
 		pos += 3;
-		memcpy(out + pos, ki->ctrl, ki->ctrllen);
-		pos += ki->ctrllen;
+		memcpy(out + pos, ctrl, ctrllen);
+		pos += ctrllen;
 
 		if (ki->encoded != NULL && ki->encodedlen > 0) {
 			out[pos++] = ';';
@@ -656,8 +771,10 @@ kitty_print(struct kitty_image *ki, size_t *outlen)
 		pos += 2;
 		out[pos] = '\0';
 
+		free(ctrl);
 		return (out);
 	}
+	free(ctrl);
 
 	out = xmalloc(1);
 	total = 0;
@@ -668,7 +785,8 @@ kitty_print(struct kitty_image *ki, size_t *outlen)
 		more = (chunk < remaining);
 		if (more)
 			chunk -= (chunk % 4);
-		ctrl = kitty_control_for_chunk(ki, first, more, &ctrllen);
+		ctrl = kitty_control_for_chunk(ki, first, more, quiet, extra,
+		    nextra, &ctrllen);
 
 		out = xrealloc(out, total + 3 + ctrllen + 1 + chunk + 2 + 1);
 		pos = total;
@@ -693,12 +811,103 @@ kitty_print(struct kitty_image *ki, size_t *outlen)
 	return (out);
 }
 
+/*
+ * Serialize a kitty_image back into APC escape sequences for transmission
+ * to the terminal, splitting large payloads into protocol-sized chunks.
+ */
+char *
+kitty_print(struct kitty_image *ki, size_t *outlen)
+{
+	return (kitty_print_with_overrides(ki, outlen, KITTY_QUIET_UNCHANGED,
+	    NULL, 0));
+}
+
+char *
+kitty_print_quiet(struct kitty_image *ki, size_t *outlen)
+{
+	return (kitty_print_with_overrides(ki, outlen,
+	    KITTY_QUIET_SUPPRESS_RESPONSES, NULL, 0));
+}
+
+char *
+kitty_print_clipped(struct kitty_image *ki, u_int xoff, u_int yoff,
+    u_int cellsx, u_int cellsy, size_t *outlen)
+{
+	struct kitty_control_override	 overrides[6];
+	char				 xbuf[32], ybuf[32], wbuf[32];
+	char				 hbuf[32], cbuf[32], rbuf[32];
+	u_int				 sx, sy, source_x, source_y;
+	u_int				 source_w, source_h;
+	uint64_t			 left, right, top, bottom;
+
+	if (ki == NULL || cellsx == 0 || cellsy == 0)
+		return (NULL);
+	if (ki->cell_x != 0 || ki->cell_y != 0)
+		return (NULL);
+
+	kitty_update_png_size(ki);
+	if (ki->pixel_w == 0 || ki->pixel_h == 0)
+		return (NULL);
+
+	kitty_size_in_cells(ki, &sx, &sy);
+	if (sx == 0 || sy == 0 || xoff >= sx || yoff >= sy)
+		return (NULL);
+	if (cellsx > sx - xoff || cellsy > sy - yoff)
+		return (NULL);
+
+	source_x = ki->delete_x;
+	source_y = ki->delete_y;
+	if (source_x >= ki->pixel_w || source_y >= ki->pixel_h)
+		return (NULL);
+	source_w = ki->source_w;
+	if (source_w == 0)
+		source_w = ki->pixel_w - source_x;
+	if (source_w > ki->pixel_w - source_x)
+		source_w = ki->pixel_w - source_x;
+	source_h = ki->source_h;
+	if (source_h == 0)
+		source_h = ki->pixel_h - source_y;
+	if (source_h > ki->pixel_h - source_y)
+		source_h = ki->pixel_h - source_y;
+	if (source_w == 0 || source_h == 0)
+		return (NULL);
+
+	left = source_x + ((uint64_t)source_w * xoff) / sx;
+	right = source_x + ((uint64_t)source_w * (xoff + cellsx)) / sx;
+	top = source_y + ((uint64_t)source_h * yoff) / sy;
+	bottom = source_y + ((uint64_t)source_h * (yoff + cellsy)) / sy;
+	if (right <= left || bottom <= top)
+		return (NULL);
+
+	snprintf(xbuf, sizeof xbuf, "%llu", (unsigned long long)left);
+	snprintf(ybuf, sizeof ybuf, "%llu", (unsigned long long)top);
+	snprintf(wbuf, sizeof wbuf, "%llu", (unsigned long long)(right - left));
+	snprintf(hbuf, sizeof hbuf, "%llu", (unsigned long long)(bottom - top));
+	snprintf(cbuf, sizeof cbuf, "%u", cellsx);
+	snprintf(rbuf, sizeof rbuf, "%u", cellsy);
+	overrides[0].key = 'x';
+	overrides[0].value = xbuf;
+	overrides[1].key = 'y';
+	overrides[1].value = ybuf;
+	overrides[2].key = 'w';
+	overrides[2].value = wbuf;
+	overrides[3].key = 'h';
+	overrides[3].value = hbuf;
+	overrides[4].key = 'c';
+	overrides[4].value = cbuf;
+	overrides[5].key = 'r';
+	overrides[5].value = rbuf;
+
+	return (kitty_print_with_overrides(ki, outlen,
+	    KITTY_QUIET_SUPPRESS_RESPONSES, overrides, 6));
+}
+
 char *
 kitty_delete_all(size_t *outlen)
 {
 	char	*out;
 
-	out = xstrdup("\033_Ga=d,d=a\033\\");
+	out = xstrdup("\033_Ga=d,d=a,q=2\033\\");
 	*outlen = strlen(out);
 	return (out);
 }

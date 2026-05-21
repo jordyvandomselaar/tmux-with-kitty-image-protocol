@@ -2161,8 +2161,8 @@ tty_cmd_sixelimage(struct tty *tty, const struct tty_ctx *ctx)
 	struct image		*im = ctx->ptr;
 	struct sixel_image	*si = im->data.sixel;
 	struct sixel_image	*new;
-	char			*data;
-	size_t			 size;
+	char			*data = NULL;
+	size_t			 size = 0;
 	u_int			 cx = ctx->ocx, cy = ctx->ocy, sx, sy;
 	u_int			 i, j, x, y, rx, ry;
 	int			 fallback = 0;
@@ -2235,23 +2235,38 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 
 	log_debug("%s: image at %u,%u (fallback=%d)", __func__, cx, cy,
 	    fallback);
-	kitty_size_in_cells(im->data.kitty, &sx, &sy);
-	if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y, &rx, &ry))
-		return;
-	clipped = (i != 0 || j != 0 || rx != sx || ry != sy);
-	if (fallback == 0 && clipped)
-		fallback = 1;
-
-	if (fallback == 1 && im->hidden)
-		return;
-
-	if (fallback == 1) {
+	if (im->hidden) {
+		if (fallback == 1)
+			return;
+		data = kitty_print_quiet(im->data.kitty, &size);
+		x = cx;
+		y = cy;
+	} else if (fallback == 1) {
 		/* Use text fallback for non-kitty terminals. */
+		kitty_size_in_cells(im->data.kitty, &sx, &sy);
+		if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y,
+		    &rx, &ry))
+			return;
 		data = xstrdup(im->fallback);
 		size = strlen(data);
 	} else {
-		/* Re-serialize the kitty image command. */
-		data = kitty_print(im->data.kitty, &size);
+		kitty_size_in_cells(im->data.kitty, &sx, &sy);
+		if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y,
+		    &rx, &ry))
+			return;
+		clipped = (i != 0 || j != 0 || rx != sx || ry != sy);
+		if (!clipped) {
+			/* Re-serialize the command without terminal replies. */
+			data = kitty_print_quiet(im->data.kitty, &size);
+		} else {
+			/* Re-serialize a cropped placement for pane-bound redraw. */
+			data = kitty_print_clipped(im->data.kitty, i, j, rx, ry,
+			    &size);
+			if (data == NULL) {
+				data = xstrdup(im->fallback);
+				size = strlen(data);
+			}
+		}
 	}
 
 	if (data != NULL) {

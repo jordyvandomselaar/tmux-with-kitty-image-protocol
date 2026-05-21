@@ -3910,6 +3910,9 @@ int		 kitty_is_incomplete(struct kitty_image *);
 int		 kitty_is_continuation(struct kitty_image *);
 int		 kitty_append(struct kitty_image *, struct kitty_image *, size_t);
 char		*kitty_print(struct kitty_image *, size_t *);
+char		*kitty_print_quiet(struct kitty_image *, size_t *);
+char		*kitty_print_clipped(struct kitty_image *, u_int, u_int, u_int,
+		     u_int, size_t *);
 char		*kitty_delete_all(size_t *);
 #endif
 

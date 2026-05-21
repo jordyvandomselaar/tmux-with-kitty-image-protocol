@@ -105,10 +105,14 @@ image_match_kitty(struct image *im, struct kitty_image *ki, char what)
 	x = kitty_get_delete_x(ki);
 	y = kitty_get_delete_y(ki);
 
+	if (im->hidden && strchr("aincpqrxyz", what) != NULL)
+		return (0);
+
 	switch (what) {
 	case 'a':
-	case 'A':
 		return (!im->hidden);
+	case 'A':
+		return (1);
 	case 'i':
 	case 'I':
 		if (image_id == 0 || kitty_get_image_id(existing) != image_id)
@@ -219,9 +223,9 @@ image_kitty_replace(struct screen *s, struct kitty_image *ki)
 	action = kitty_get_action(ki);
 	if (action == 'T' || action == 't') {
 		if (kitty_get_image_id(ki) != 0)
-			return (image_remove_kitty(s, ki, 'i'));
-		if (kitty_get_image_num(ki) != 0)
 			return (image_remove_kitty(s, ki, 'I'));
+		if (kitty_get_image_num(ki) != 0)
+			return (image_remove_kitty(s, ki, 'N'));
 	}
 	return (image_remove_kitty(s, ki, '\0'));
 }

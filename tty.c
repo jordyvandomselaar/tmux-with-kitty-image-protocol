@@ -2243,25 +2243,28 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 		y = cy;
 	} else if (fallback == 1) {
 		/* Use text fallback for non-kitty terminals. */
-		kitty_size_in_cells(im->data.kitty, &sx, &sy);
+		sx = im->sx;
+		sy = im->sy;
 		if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y,
 		    &rx, &ry))
 			return;
 		data = xstrdup(im->fallback);
 		size = strlen(data);
 	} else {
-		kitty_size_in_cells(im->data.kitty, &sx, &sy);
+		sx = im->sx;
+		sy = im->sy;
 		if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y,
 		    &rx, &ry))
 			return;
-		clipped = (i != 0 || j != 0 || rx != sx || ry != sy);
+		clipped = (im->kitty_xoff != 0 || im->kitty_yoff != 0 ||
+		    i != 0 || j != 0 || rx != sx || ry != sy);
 		if (!clipped) {
 			/* Re-serialize the command without terminal replies. */
 			data = kitty_print_quiet(im->data.kitty, &size);
 		} else {
 			/* Re-serialize a cropped placement for pane-bound redraw. */
-			data = kitty_print_clipped(im->data.kitty, i, j, rx, ry,
-			    &size);
+			data = kitty_print_clipped(im->data.kitty, im->kitty_xoff + i,
+			    im->kitty_yoff + j, rx, ry, &size);
 			if (data == NULL) {
 				data = xstrdup(im->fallback);
 				size = strlen(data);

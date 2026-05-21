@@ -30,6 +30,7 @@ static u_int		all_images_count;
 #ifdef ENABLE_KITTY_IMAGES
 static u_int		next_kitty_image_id = 0x80000000U;
 static u_int		next_kitty_placement_id = 0x80000000U;
+static u_int		kitty_images_generation;
 #endif
 
 static void printflike(3, 4)
@@ -59,6 +60,13 @@ static void
 image_free(struct image *im)
 {
 	image_log(im, __func__, NULL);
+
+#ifdef ENABLE_KITTY_IMAGES
+	if (im->type == IMAGE_KITTY && !im->hidden) {
+		if (++kitty_images_generation == 0)
+			kitty_images_generation = 1;
+	}
+#endif
 
 	TAILQ_REMOVE(&all_images, im, all_entry);
 	all_images_count--;
@@ -138,6 +146,12 @@ int
 image_kitty_has_source(struct screen *s, struct kitty_image *ki)
 {
 	return (image_find_kitty_source(s, ki) != NULL);
+}
+
+u_int
+image_kitty_generation(void)
+{
+	return (kitty_images_generation);
 }
 
 static int
@@ -558,7 +572,10 @@ image_scroll_up(struct screen *s, u_int lines)
 	int			 redraw = 0;
 #ifdef ENABLE_SIXEL
 	struct sixel_image	*new;
-	u_int			 sx, sy;
+	u_int			 sx;
+#endif
+#if defined(ENABLE_SIXEL) || defined(ENABLE_KITTY_IMAGES)
+	u_int			 sy;
 #endif
 
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
@@ -601,12 +618,13 @@ image_scroll_up(struct screen *s, u_int lines)
 #endif
 #ifdef ENABLE_KITTY_IMAGES
 		case IMAGE_KITTY:
-			/*
-			 * For kitty images, we can't rescale - the terminal
-			 * owns the placement. Just adjust position and let
-			 * the terminal handle clipping.
-			 */
+			sy = (im->py + im->sy) - lines;
+			im->kitty_yoff += im->sy - sy;
 			im->py = 0;
+			im->sy = sy;
+
+			free(im->fallback);
+			image_fallback(&im->fallback, im->type, im->sx, im->sy);
 			redraw = 1;
 			break;
 #endif

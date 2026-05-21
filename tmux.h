@@ -995,6 +995,10 @@ struct image {
 	u_int			 py;
 	u_int			 sx;
 	u_int			 sy;
+#ifdef ENABLE_KITTY_IMAGES
+	u_int			 kitty_xoff;
+	u_int			 kitty_yoff;
+#endif
 
 	TAILQ_ENTRY (image)	 entry;
 
@@ -2082,6 +2086,9 @@ struct client {
 
 	struct status_line	 status;
 	enum client_theme	 theme;
+#ifdef ENABLE_KITTY_IMAGES
+	u_int			 kitty_images_generation;
+#endif
 
 	struct input_requests	 input_requests;
 
@@ -3864,6 +3871,7 @@ struct image	*image_store(struct screen *, enum image_type, void *);
 struct image	*image_store_kitty_upload(struct screen *,
 		     struct kitty_image *);
 int		 image_kitty_has_source(struct screen *, struct kitty_image *);
+u_int		 image_kitty_generation(void);
 #endif
 int		 image_check_line(struct screen *, u_int, u_int);
 int		 image_check_area(struct screen *, u_int, u_int, u_int, u_int);

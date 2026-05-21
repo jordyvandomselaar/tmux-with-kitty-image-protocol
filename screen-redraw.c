@@ -662,7 +662,9 @@ screen_redraw_window_has_images(struct window *w)
 	struct window_pane	*wp;
 
 	TAILQ_FOREACH(wp, &w->panes, entry) {
-		if (wp->screen != NULL && !TAILQ_EMPTY(&wp->screen->images))
+		if (wp->screen == NULL)
+			continue;
+		if (!TAILQ_EMPTY(&wp->screen->images))
 			return (1);
 	}
 	return (0);
@@ -706,6 +708,7 @@ screen_redraw_screen(struct client *c)
 		 * terminal before new content is drawn over them.
 		 */
 		tty_kitty_delete_all(&c->tty);
+		c->kitty_images_generation = image_kitty_generation();
 #endif
 		screen_redraw_draw_panes(&ctx);
 		screen_redraw_draw_pane_scrollbars(&ctx);
@@ -740,12 +743,15 @@ screen_redraw_pane(struct client *c, struct window_pane *wp,
 	if (!redraw_scrollbar_only) {
 #ifdef ENABLE_KITTY_IMAGES
 		if ((c->tty.term->flags & TERM_KITTY) &&
-		    screen_redraw_window_has_images(wp->window)) {
+		    (screen_redraw_window_has_images(wp->window) ||
+		    c->kitty_images_generation != image_kitty_generation())) {
 			/*
-			 * Kitty's delete-all command clears terminal-global image state, so
-			 * redraw every visible pane after using it from a pane redraw path.
+			 * Kitty's delete-all command clears terminal-global image
+			 * state, so redraw every visible pane after using it from
+			 * a pane redraw path.
 			 */
 			tty_kitty_delete_all(&c->tty);
+			c->kitty_images_generation = image_kitty_generation();
 			screen_redraw_draw_panes(&ctx);
 		} else
 #endif

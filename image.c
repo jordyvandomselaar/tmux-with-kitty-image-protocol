@@ -108,7 +108,7 @@ image_contains_kitty_cell(struct image *im, u_int px, u_int py)
 }
 
 static struct image *
-image_find_kitty_upload(struct screen *s, struct kitty_image *ki)
+image_find_kitty_source(struct screen *s, struct kitty_image *ki)
 {
 	struct image		*im;
 	struct kitty_image	*existing;
@@ -120,15 +120,63 @@ image_find_kitty_upload(struct screen *s, struct kitty_image *ki)
 		return (NULL);
 
 	TAILQ_FOREACH(im, &s->images, entry) {
-		if (im->type != IMAGE_KITTY || !im->hidden)
+		if (im->type != IMAGE_KITTY)
 			continue;
 		existing = im->data.kitty;
+		if (kitty_get_action(existing) != 'T' &&
+		    kitty_get_action(existing) != 't')
+			continue;
 		if (image_id != 0 && kitty_get_image_id(existing) == image_id)
 			return (im);
 		if (image_num != 0 && kitty_get_image_num(existing) == image_num)
 			return (im);
 	}
 	return (NULL);
+}
+
+int
+image_kitty_has_source(struct screen *s, struct kitty_image *ki)
+{
+	return (image_find_kitty_source(s, ki) != NULL);
+}
+
+static int
+image_is_kitty_source_referenced(struct image *im)
+{
+	struct image		*other;
+	u_int			 image_id;
+
+	if (im->type != IMAGE_KITTY)
+		return (0);
+	if (kitty_get_action(im->data.kitty) != 'T' &&
+	    kitty_get_action(im->data.kitty) != 't')
+		return (0);
+	image_id = kitty_get_terminal_image_id(im->data.kitty);
+	if (image_id == 0)
+		return (0);
+
+	TAILQ_FOREACH(other, im->images, entry) {
+		if (other == im || other->type != IMAGE_KITTY)
+			continue;
+		if (kitty_get_terminal_image_id(other->data.kitty) == image_id &&
+		    kitty_get_action(other->data.kitty) == 'p')
+			return (1);
+	}
+	return (0);
+}
+
+static void
+image_free_oldest(void)
+{
+	struct image	*im;
+
+	TAILQ_FOREACH(im, &all_images, all_entry) {
+		if (!image_is_kitty_source_referenced(im)) {
+			image_free(im);
+			return;
+		}
+	}
+	image_free(TAILQ_FIRST(&all_images));
 }
 
 static void
@@ -141,15 +189,12 @@ image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
 	action = kitty_get_action(ki);
 	if (kitty_get_terminal_image_id(ki) == 0) {
 		if (action == 'p') {
-			upload = image_find_kitty_upload(s, ki);
+			upload = image_find_kitty_source(s, ki);
 			if (upload != NULL) {
 				image_id =
 				    kitty_get_terminal_image_id(upload->data.kitty);
 				kitty_set_terminal_image_id(ki, image_id);
-			} else if (kitty_get_image_id(ki) != 0 ||
-			    kitty_get_image_num(ki) != 0)
-				kitty_set_terminal_image_id(ki,
-				    image_next_kitty_id(&next_kitty_image_id));
+			}
 		} else if (action == 'T' || action == 't')
 			kitty_set_terminal_image_id(ki,
 			    image_next_kitty_id(&next_kitty_image_id));
@@ -440,8 +485,13 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 	TAILQ_INSERT_TAIL(&s->images, im, entry);
 
 	TAILQ_INSERT_TAIL(&all_images, im, all_entry);
-	if (++all_images_count == MAX_IMAGE_COUNT)
+	if (++all_images_count == MAX_IMAGE_COUNT) {
+#ifdef ENABLE_KITTY_IMAGES
+		image_free_oldest();
+#else
 		image_free(TAILQ_FIRST(&all_images));
+#endif
+	}
 
 	return (im);
 }

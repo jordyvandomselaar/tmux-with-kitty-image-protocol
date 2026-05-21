@@ -3863,6 +3863,7 @@ struct image	*image_store(struct screen *, enum image_type, void *);
 #ifdef ENABLE_KITTY_IMAGES
 struct image	*image_store_kitty_upload(struct screen *,
 		     struct kitty_image *);
+int		 image_kitty_has_source(struct screen *, struct kitty_image *);
 #endif
 int		 image_check_line(struct screen *, u_int, u_int);
 int		 image_check_area(struct screen *, u_int, u_int, u_int, u_int);

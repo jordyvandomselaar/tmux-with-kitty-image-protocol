@@ -2736,30 +2736,6 @@ input_enter_apc(struct input_ctx *ictx)
 }
 
 #ifdef ENABLE_KITTY_IMAGES
-/* Check if any visible client for this pane supports kitty graphics. */
-static int
-input_has_kitty(struct input_ctx *ictx)
-{
-	struct window_pane	*wp = ictx->wp;
-	struct client		*c;
-
-	if (wp == NULL || !window_pane_visible(wp))
-		return (0);
-	TAILQ_FOREACH(c, &clients, entry) {
-		if (c->session == NULL || c->tty.term == NULL)
-			continue;
-		if (c->flags & CLIENT_SUSPENDED)
-			continue;
-		if (c->tty.flags & TTY_FREEZE)
-			continue;
-		if (c->session->curw->window != wp->window)
-			continue;
-		if (c->tty.term->flags & TERM_KITTY)
-			return (1);
-	}
-	return (0);
-}
-
 static void
 input_reply_kitty(struct input_ctx *ictx, struct kitty_image *ki,
     const char *message)
@@ -2879,11 +2855,8 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		if (kitty_get_medium(ki) != 'd') {
 			input_reply_kitty_error(ictx, ki,
 			    "EINVAL:unsupported transmission medium");
-		} else if (input_has_kitty(ictx))
+		} else
 			input_reply_kitty_ok(ictx, ki);
-		else
-			input_reply_kitty_error(ictx, ki,
-			    "ENOSYS:kitty graphics unavailable");
 		kitty_free(ki);
 		return;
 	}
@@ -2908,13 +2881,18 @@ input_apc_kitty_image(struct input_ctx *ictx)
 
 	/* Store image placements and trigger a redraw. */
 	if (kitty_get_action(ki) == 'T' || kitty_get_action(ki) == 'p') {
+		if (kitty_get_action(ki) == 'p' && !image_kitty_has_source(sctx->s,
+		    ki)) {
+			input_reply_kitty_error(ictx, ki,
+			    "EINVAL:unknown image id");
+			kitty_free(ki);
+			return;
+		}
 		screen_write_kittyimage(sctx, ki);
-		if (input_has_kitty(ictx))
-			input_reply_kitty_ok(ictx, ki);
+		input_reply_kitty_ok(ictx, ki);
 	} else if (kitty_get_action(ki) == 't') {
 		screen_write_kittyimage_upload(sctx, ki);
-		if (input_has_kitty(ictx))
-			input_reply_kitty_ok(ictx, ki);
+		input_reply_kitty_ok(ictx, ki);
 	} else if (kitty_get_action(ki) == 'd') {
 		int	 redraw;
 
@@ -2927,8 +2905,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		}
 		if (redraw && wp != NULL)
 			server_redraw_window(wp->window);
-		if (input_has_kitty(ictx))
-			input_reply_kitty_ok(ictx, ki);
+		input_reply_kitty_ok(ictx, ki);
 		kitty_free(ki);
 	} else {
 		input_reply_kitty_error(ictx, ki, "ENOSYS:unsupported action");

@@ -1721,6 +1721,7 @@ struct tty {
 #define TTY_WINSIZEQUERY 0x1000
 #define TTY_WAITFG 0x2000
 #define TTY_WAITBG 0x4000
+#define TTY_WAITKITTY 0x8000
 #define TTY_ALL_REQUEST_FLAGS \
 	(TTY_HAVEDA|TTY_HAVEDA2|TTY_HAVEXDA)
 	int		 flags;
@@ -3891,6 +3892,7 @@ struct kitty_image *kitty_parse(const u_char *, size_t, u_int, u_int);
 void		 kitty_free(struct kitty_image *);
 void		 kitty_size_in_cells(struct kitty_image *, u_int *, u_int *);
 int		 kitty_has_height(struct kitty_image *);
+int		 kitty_validate_payload(struct kitty_image *);
 char		 kitty_get_action(struct kitty_image *);
 char		 kitty_get_medium(struct kitty_image *);
 u_int		 kitty_get_image_id(struct kitty_image *);
@@ -3899,6 +3901,9 @@ u_int		 kitty_get_placement_id(struct kitty_image *);
 u_int		 kitty_get_image_num(struct kitty_image *);
 char		 kitty_get_delete_what(struct kitty_image *);
 int		 kitty_get_cursor_policy(struct kitty_image *);
+u_int		 kitty_get_delete_x(struct kitty_image *);
+u_int		 kitty_get_delete_y(struct kitty_image *);
+int		 kitty_get_z_index(struct kitty_image *);
 u_int		 kitty_get_quiet(struct kitty_image *);
 int		 kitty_has_more(struct kitty_image *);
 int		 kitty_is_incomplete(struct kitty_image *);

@@ -21,6 +21,7 @@
 #include <netinet/in.h>
 
 #include <resolv.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -50,6 +51,8 @@ struct kitty_image {
 	u_int		 has_more;
 	u_int		 quiet;       /* q=: suppress responses */
 	u_int		 cursor_policy; /* C=: 1=do not move cursor after display */
+	u_int		 delete_x;    /* x=: delete cell/column/range start */
+	u_int		 delete_y;    /* y=: delete cell/row/range end */
 	int		 z_index;     /* z=: z-index */
 	char		 compression; /* o=: 'z'=zlib, 0=none */
 	char		 delete_what; /* d=: delete target (used with a=d) */
@@ -159,6 +162,16 @@ kitty_parse_control(const char *ctrl, size_t ctrllen, struct kitty_image *ki)
 			if (errstr != NULL)
 				return (-1);
 			break;
+		case 'x':
+			ki->delete_x = strtonum(val, 0, UINT_MAX, &errstr);
+			if (errstr != NULL)
+				return (-1);
+			break;
+		case 'y':
+			ki->delete_y = strtonum(val, 0, UINT_MAX, &errstr);
+			if (errstr != NULL)
+				return (-1);
+			break;
 		case 'z':
 			ki->z_index = strtonum(val, INT_MIN, INT_MAX, &errstr);
 			if (errstr != NULL)
@@ -175,6 +188,27 @@ kitty_parse_control(const char *ctrl, size_t ctrllen, struct kitty_image *ki)
 	return (0);
 }
 
+static int
+kitty_decode_payload(struct kitty_image *ki, u_char **out, size_t *outlen)
+{
+	size_t	 size;
+	int	 decoded;
+
+	if (ki->encoded == NULL || ki->encodedlen == 0)
+		return (0);
+
+	size = ((ki->encodedlen + 3) / 4) * 3;
+	*out = xmalloc(size);
+	decoded = b64_pton(ki->encoded, *out, size);
+	if (decoded == -1) {
+		free(*out);
+		*out = NULL;
+		return (0);
+	}
+	*outlen = decoded;
+	return (1);
+}
+
 static u_int
 kitty_get_be32(const u_char *p)
 {
@@ -186,17 +220,15 @@ static void
 kitty_update_png_size(struct kitty_image *ki)
 {
 	u_char	*out;
-	size_t	 size;
-	int	 outlen;
+	size_t	 outlen;
 
 	if (ki->format != 100 || ki->encoded == NULL || ki->encodedlen == 0)
 		return;
 	if (ki->pixel_w != 0 && ki->pixel_h != 0)
 		return;
 
-	size = ((ki->encodedlen + 3) / 4) * 3;
-	out = xmalloc(size);
-	outlen = b64_pton(ki->encoded, out, size);
+	if (!kitty_decode_payload(ki, &out, &outlen))
+		return;
 	if (outlen >= KITTY_PNG_HEADER_SIZE &&
 	    memcmp(out, "\211PNG\r\n\032\n", 8) == 0 &&
 	    memcmp(out + 12, "IHDR", 4) == 0) {
@@ -206,6 +238,44 @@ kitty_update_png_size(struct kitty_image *ki)
 			ki->pixel_h = kitty_get_be32(out + 20);
 	}
 	free(out);
+}
+
+static int
+kitty_validate_png_payload(struct kitty_image *ki, u_char *out, size_t outlen)
+{
+	if (outlen < KITTY_PNG_HEADER_SIZE)
+		return (0);
+	if (memcmp(out, "\211PNG\r\n\032\n", 8) != 0)
+		return (0);
+	if (memcmp(out + 12, "IHDR", 4) != 0)
+		return (0);
+	if (ki->pixel_w == 0)
+		ki->pixel_w = kitty_get_be32(out + 16);
+	if (ki->pixel_h == 0)
+		ki->pixel_h = kitty_get_be32(out + 20);
+	return (ki->pixel_w != 0 && ki->pixel_h != 0);
+}
+
+static int
+kitty_validate_raw_payload(struct kitty_image *ki, size_t outlen)
+{
+	size_t	bytes;
+	u_int	depth;
+
+	if (ki->pixel_w == 0 || ki->pixel_h == 0)
+		return (0);
+	if (ki->format == 24)
+		depth = 3;
+	else if (ki->format == 32)
+		depth = 4;
+	else
+		return (0);
+	if (ki->pixel_w > SIZE_MAX / ki->pixel_h)
+		return (0);
+	bytes = ki->pixel_w * ki->pixel_h;
+	if (bytes > SIZE_MAX / depth)
+		return (0);
+	return (outlen == bytes * depth);
 }
 
 /*
@@ -314,6 +384,32 @@ kitty_has_height(struct kitty_image *ki)
 	return (0);
 }
 
+int
+kitty_validate_payload(struct kitty_image *ki)
+{
+	u_char	*out;
+	size_t	 outlen;
+	char	 action;
+	int	 valid;
+
+	action = ki->action;
+	if (action != 'T' && action != 't')
+		return (1);
+	if (ki->medium != 'd')
+		return (1);
+	if (ki->compression != '\0')
+		return (0);
+	if (!kitty_decode_payload(ki, &out, &outlen))
+		return (0);
+
+	if (ki->format == 100)
+		valid = kitty_validate_png_payload(ki, out, outlen);
+	else
+		valid = kitty_validate_raw_payload(ki, outlen);
+	free(out);
+	return (valid);
+}
+
 char
 kitty_get_action(struct kitty_image *ki)
 {
@@ -360,6 +456,24 @@ int
 kitty_get_cursor_policy(struct kitty_image *ki)
 {
 	return (ki->cursor_policy);
+}
+
+u_int
+kitty_get_delete_x(struct kitty_image *ki)
+{
+	return (ki->delete_x);
+}
+
+u_int
+kitty_get_delete_y(struct kitty_image *ki)
+{
+	return (ki->delete_y);
+}
+
+int
+kitty_get_z_index(struct kitty_image *ki)
+{
+	return (ki->z_index);
 }
 
 u_int

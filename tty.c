@@ -313,7 +313,7 @@ tty_start_timer_callback(__unused int fd, __unused short events, void *data)
 		tty_update_features(tty);
 	tty->flags |= TTY_ALL_REQUEST_FLAGS;
 
-	tty->flags &= ~(TTY_WAITBG|TTY_WAITFG);
+	tty->flags &= ~(TTY_WAITBG|TTY_WAITFG|TTY_WAITKITTY);
 }
 
 static void
@@ -404,9 +404,11 @@ tty_send_requests(struct tty *tty)
 		 * which is exactly what our parsers expect.
 		 * Only probe if the kitty feature isn't already enabled.
 		 */
-		if (~tty->term->flags & TERM_KITTY)
+		if (~tty->term->flags & TERM_KITTY) {
 			tty_puts(tty,
 			    "\033_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\033\\");
+			tty->flags |= TTY_WAITKITTY;
+		}
 #endif
 		if (~tty->flags & TTY_HAVEDA)
 			tty_puts(tty, "\033[c");
@@ -2222,7 +2224,7 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 	size_t			 size;
 	u_int			 cx = ctx->ocx, cy = ctx->ocy, sx, sy;
 	u_int			 i, j, x, y, rx, ry;
-	int			 fallback = 0;
+	int			 fallback = 0, clipped;
 
 	if (im == NULL || im->data.kitty == NULL)
 		return;
@@ -2236,8 +2238,9 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 	kitty_size_in_cells(im->data.kitty, &sx, &sy);
 	if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y, &rx, &ry))
 		return;
-	if (fallback == 0 && (i != 0 || j != 0 || rx != sx || ry != sy))
-		return;
+	clipped = (i != 0 || j != 0 || rx != sx || ry != sy);
+	if (fallback == 0 && clipped)
+		fallback = 1;
 
 	if (fallback == 1 && im->hidden)
 		return;

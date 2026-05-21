@@ -185,7 +185,6 @@ static void	input_ground(struct input_ctx *);
 static void	input_enter_dcs(struct input_ctx *);
 static void	input_enter_osc(struct input_ctx *);
 static void	input_exit_osc(struct input_ctx *);
-static int	input_da1_has_sixel(struct input_ctx *);
 static void	input_enter_apc(struct input_ctx *);
 static void	input_exit_apc(struct input_ctx *);
 static void	input_enter_rename(struct input_ctx *);
@@ -1575,10 +1574,11 @@ input_csi_dispatch(struct input_ctx *ictx)
 		case -1:
 			break;
 		case 0:
-			if (input_da1_has_sixel(ictx))
-				input_reply(ictx, 1, "\033[?1;2;4c");
-			else
-				input_reply(ictx, 1, "\033[?1;2c");
+#ifdef ENABLE_SIXEL
+			input_reply(ictx, 1, "\033[?1;2;4c");
+#else
+			input_reply(ictx, 1, "\033[?1;2c");
+#endif
 			break;
 		default:
 			log_debug("%s: unknown '%c'", __func__, ictx->ch);
@@ -2735,31 +2735,6 @@ input_enter_apc(struct input_ctx *ictx)
 	ictx->flags &= ~INPUT_LAST;
 }
 
-/*
- * Check if any client viewing this pane has an outer terminal that supports
- * sixel, so we can report it in the DA1 response.
- */
-static int
-input_da1_has_sixel(__unused struct input_ctx *ictx)
-{
-#ifdef ENABLE_SIXEL
-	struct window_pane	*wp = ictx->wp;
-	struct client		*c;
-
-	if (wp == NULL)
-		return (0);
-	TAILQ_FOREACH(c, &clients, entry) {
-		if (c->session == NULL)
-			continue;
-		if (c->session->curw->window != wp->window)
-			continue;
-		if (c->tty.term->flags & TERM_SIXEL)
-			return (1);
-	}
-#endif
-	return (0);
-}
-
 #ifdef ENABLE_KITTY_IMAGES
 /* Check if any visible client for this pane supports kitty graphics. */
 static int
@@ -2918,6 +2893,11 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		kitty_free(ki);
 		return;
 	}
+	if (!kitty_validate_payload(ki)) {
+		input_reply_kitty_error(ictx, ki, "EINVAL:invalid image data");
+		kitty_free(ki);
+		return;
+	}
 
 	/* Store image placements and trigger a redraw. */
 	if (kitty_get_action(ki) == 'T' || kitty_get_action(ki) == 'p') {
@@ -2947,8 +2927,16 @@ input_apc_kitty_image(struct input_ctx *ictx)
 	} else if (kitty_get_action(ki) == 'd') {
 		char	*apc;
 		size_t	 apclen;
+		int	 redraw;
 
-		if (image_kitty_delete(sctx->s, ki) && wp != NULL)
+		redraw = image_kitty_delete(sctx->s, ki);
+		if (redraw == -1) {
+			input_reply_kitty_error(ictx, ki,
+			    "EINVAL:unsupported delete scope");
+			kitty_free(ki);
+			return;
+		}
+		if (redraw && wp != NULL)
 			wp->flags |= PANE_REDRAW;
 		/* Deletion commands still need to reach attached kitty clients. */
 		apclen = xasprintf(&apc, "\033_%s\033\\", ictx->input_buf);

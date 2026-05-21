@@ -972,7 +972,7 @@ partial_key:
 	delay = options_get_number(global_options, "escape-time");
 	if (delay == 0)
 		delay = 1;
-	if ((tty->flags & (TTY_WAITFG|TTY_WAITBG) ||
+	if ((tty->flags & (TTY_WAITFG|TTY_WAITBG|TTY_WAITKITTY) ||
 	    (tty->flags & TTY_ALL_REQUEST_FLAGS) != TTY_ALL_REQUEST_FLAGS) ||
 	    !TAILQ_EMPTY(&c->input_requests)) {
 		log_debug("%s: increasing delay for active query", c->name);
@@ -1824,6 +1824,26 @@ tty_keys_palette(struct tty *tty, const char *buf, size_t len, size_t *size)
 }
 
 #ifdef ENABLE_KITTY_IMAGES
+static int
+tty_keys_kitty_graphics_is_probe(const char *tmp)
+{
+	const char	*p = tmp, *semi, *end, *eq;
+
+	if ((semi = strchr(tmp, ';')) == NULL)
+		return (0);
+	while (p < semi) {
+		end = memchr(p, ',', semi - p);
+		if (end == NULL)
+			end = semi;
+		eq = memchr(p, '=', end - p);
+		if (eq != NULL && eq == p + 1 && *p == 'i' &&
+		    end - eq == 3 && memcmp(eq + 1, "31", 2) == 0)
+			return (1);
+		p = end + 1;
+	}
+	return (0);
+}
+
 /*
  * Handle kitty graphics protocol response from outer terminal.
  * Format: ESC _ G <key=value,...> ; <message> ESC \
@@ -1843,6 +1863,8 @@ tty_keys_kitty_graphics(struct tty *tty, const char *buf, size_t len,
 	char		 tmp[256];
 
 	*size = 0;
+	if (~tty->flags & TTY_WAITKITTY)
+		return (-1);
 
 	/*
 	 * Kitty APC response starts with ESC _ G (3 bytes).
@@ -1876,6 +1898,9 @@ tty_keys_kitty_graphics(struct tty *tty, const char *buf, size_t len,
 		return (-1); /* too long, not a valid response */
 
 	log_debug("%s: kitty graphics response: %s", c->name, tmp);
+	if (!tty_keys_kitty_graphics_is_probe(tmp))
+		return (-1);
+	tty->flags &= ~TTY_WAITKITTY;
 
 	/*
 	 * Check if the message (after the semicolon) starts with "OK".

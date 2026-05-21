@@ -81,10 +81,19 @@ image_free(struct image *im)
 
 #ifdef ENABLE_KITTY_IMAGES
 static int
+image_contains_kitty_cell(struct image *im, u_int px, u_int py)
+{
+	if (im->hidden)
+		return (0);
+	return (px >= im->px && px < im->px + im->sx &&
+	    py >= im->py && py < im->py + im->sy);
+}
+
+static int
 image_match_kitty(struct image *im, struct kitty_image *ki, char what)
 {
 	struct kitty_image	*existing;
-	u_int			 image_id, image_num, placement_id;
+	u_int			 image_id, image_num, placement_id, x, y;
 
 	if (im->type != IMAGE_KITTY)
 		return (0);
@@ -93,26 +102,64 @@ image_match_kitty(struct image *im, struct kitty_image *ki, char what)
 	image_id = kitty_get_image_id(ki);
 	image_num = kitty_get_image_num(ki);
 	placement_id = kitty_get_placement_id(ki);
+	x = kitty_get_delete_x(ki);
+	y = kitty_get_delete_y(ki);
 
 	switch (what) {
 	case 'a':
-		return (1);
+	case 'A':
+		return (!im->hidden);
 	case 'i':
-		return (image_id != 0 &&
-		    kitty_get_image_id(existing) == image_id);
 	case 'I':
-		return (image_num != 0 &&
-		    kitty_get_image_num(existing) == image_num);
-	case 'p':
-		if (placement_id == 0)
+		if (image_id == 0 || kitty_get_image_id(existing) != image_id)
 			return (0);
-		if (image_id != 0)
-			return (kitty_get_image_id(existing) == image_id &&
-			    kitty_get_placement_id(existing) == placement_id);
-		if (image_num != 0)
-			return (kitty_get_image_num(existing) == image_num &&
-			    kitty_get_placement_id(existing) == placement_id);
-		return (kitty_get_placement_id(existing) == placement_id);
+		if (placement_id != 0)
+			return (kitty_get_placement_id(existing) == placement_id);
+		return (1);
+	case 'n':
+	case 'N':
+		if (image_num == 0 || kitty_get_image_num(existing) != image_num)
+			return (0);
+		if (placement_id != 0)
+			return (kitty_get_placement_id(existing) == placement_id);
+		return (1);
+	case 'c':
+	case 'C':
+		return (image_contains_kitty_cell(im, im->s->cx, im->s->cy));
+	case 'f':
+	case 'F':
+		return (0);
+	case 'p':
+	case 'P':
+		if (x == 0 || y == 0)
+			return (0);
+		return (image_contains_kitty_cell(im, x - 1, y - 1));
+	case 'q':
+	case 'Q':
+		if (x == 0 || y == 0)
+			return (0);
+		return (kitty_get_z_index(existing) == kitty_get_z_index(ki) &&
+		    image_contains_kitty_cell(im, x - 1, y - 1));
+	case 'x':
+	case 'X':
+		if (x == 0 || im->hidden)
+			return (0);
+		return (x - 1 >= im->px && x - 1 < im->px + im->sx);
+	case 'y':
+	case 'Y':
+		if (y == 0 || im->hidden)
+			return (0);
+		return (y - 1 >= im->py && y - 1 < im->py + im->sy);
+	case 'z':
+	case 'Z':
+		return (!im->hidden &&
+		    kitty_get_z_index(existing) == kitty_get_z_index(ki));
+	case 'r':
+	case 'R':
+		if (x == 0 || y == 0 || x > y)
+			return (0);
+		image_id = kitty_get_image_id(existing);
+		return (image_id >= x && image_id <= y);
 	default:
 		if (placement_id != 0 && image_id != 0)
 			return (kitty_get_image_id(existing) == image_id &&
@@ -155,7 +202,9 @@ image_kitty_delete(struct screen *s, struct kitty_image *ki)
 
 	what = kitty_get_delete_what(ki);
 	if (what == '\0')
-		return (0);
+		what = 'a';
+	if (strchr("aAiInNcCfFpPqQxXyYzZrR", what) == NULL)
+		return (-1);
 	return (image_remove_kitty(s, ki, what));
 }
 

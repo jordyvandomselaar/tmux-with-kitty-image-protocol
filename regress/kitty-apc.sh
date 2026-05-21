@@ -42,6 +42,13 @@ test_apc '\033_Gbad\033\\after-malformed\n' 'after-malformed' 'Gbad'
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,t=d,f=32,s=1,v=1,c=1,r=1;!!!!\033\\\\after-invalid\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-invalid/ { print NR; exit }' $TMP)" = 1 ] || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
     "stty raw -echo min 0 time 10; printf '\033_Ga=q,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=64 2>/dev/null | od -An -tx1; sleep 1"
 sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1

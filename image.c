@@ -27,6 +27,11 @@ static struct images	all_images = TAILQ_HEAD_INITIALIZER(all_images);
 static u_int		all_images_count;
 #define MAX_IMAGE_COUNT 20
 
+#ifdef ENABLE_KITTY_IMAGES
+static u_int		next_kitty_image_id = 0x80000000U;
+static u_int		next_kitty_placement_id = 0x80000000U;
+#endif
+
 static void printflike(3, 4)
 image_log(struct image *im, const char* from, const char* fmt, ...)
 {
@@ -80,6 +85,19 @@ image_free(struct image *im)
 }
 
 #ifdef ENABLE_KITTY_IMAGES
+static u_int
+image_next_kitty_id(u_int *next)
+{
+	u_int	id;
+
+	id = (*next)++;
+	if (id == 0) {
+		id = 0x80000000U;
+		*next = id + 1;
+	}
+	return (id);
+}
+
 static int
 image_contains_kitty_cell(struct image *im, u_int px, u_int py)
 {
@@ -87,6 +105,61 @@ image_contains_kitty_cell(struct image *im, u_int px, u_int py)
 		return (0);
 	return (px >= im->px && px < im->px + im->sx &&
 	    py >= im->py && py < im->py + im->sy);
+}
+
+static struct image *
+image_find_kitty_upload(struct screen *s, struct kitty_image *ki)
+{
+	struct image		*im;
+	struct kitty_image	*existing;
+	u_int			 image_id, image_num;
+
+	image_id = kitty_get_image_id(ki);
+	image_num = kitty_get_image_num(ki);
+	if (image_id == 0 && image_num == 0)
+		return (NULL);
+
+	TAILQ_FOREACH(im, &s->images, entry) {
+		if (im->type != IMAGE_KITTY || !im->hidden)
+			continue;
+		existing = im->data.kitty;
+		if (image_id != 0 && kitty_get_image_id(existing) == image_id)
+			return (im);
+		if (image_num != 0 && kitty_get_image_num(existing) == image_num)
+			return (im);
+	}
+	return (NULL);
+}
+
+static void
+image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
+{
+	struct image	*upload;
+	char		 action;
+	u_int		 image_id;
+
+	action = kitty_get_action(ki);
+	if (kitty_get_terminal_image_id(ki) == 0) {
+		if (action == 'p') {
+			upload = image_find_kitty_upload(s, ki);
+			if (upload != NULL) {
+				image_id =
+				    kitty_get_terminal_image_id(upload->data.kitty);
+				kitty_set_terminal_image_id(ki, image_id);
+			} else if (kitty_get_image_id(ki) != 0 ||
+			    kitty_get_image_num(ki) != 0)
+				kitty_set_terminal_image_id(ki,
+				    image_next_kitty_id(&next_kitty_image_id));
+		} else if (action == 'T' || action == 't')
+			kitty_set_terminal_image_id(ki,
+			    image_next_kitty_id(&next_kitty_image_id));
+	}
+
+	if (!hidden && kitty_get_placement_id(ki) != 0 &&
+	    kitty_get_terminal_placement_id(ki) == 0) {
+		kitty_set_terminal_placement_id(ki,
+		    image_next_kitty_id(&next_kitty_placement_id));
+	}
 }
 
 static int
@@ -350,6 +423,7 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 #ifdef ENABLE_KITTY_IMAGES
 	case IMAGE_KITTY:
 		image_kitty_replace(s, data);
+		image_prepare_kitty(s, data, hidden);
 		im->data.kitty = data;
 		if (!hidden)
 			kitty_size_in_cells(im->data.kitty, &im->sx, &im->sy);

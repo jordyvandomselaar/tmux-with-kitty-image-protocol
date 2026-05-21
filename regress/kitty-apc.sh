@@ -71,6 +71,13 @@ $TMUX capturep -pS0 >$TMP || exit 1
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=t,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
     "printf '\033_Ga=T,t=f,f=100,s=1,v=1,r=1;L3RtcC9pbWc=\033\\\\after-file\\n'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1

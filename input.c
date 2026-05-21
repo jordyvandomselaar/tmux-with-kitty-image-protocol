@@ -2898,6 +2898,13 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		kitty_free(ki);
 		return;
 	}
+	if (kitty_get_action(ki) == 't' && kitty_get_image_id(ki) == 0 &&
+	    kitty_get_image_num(ki) == 0) {
+		input_reply_kitty_error(ictx, ki,
+		    "EINVAL:image id required for transmit-only upload");
+		kitty_free(ki);
+		return;
+	}
 
 	/* Store image placements and trigger a redraw. */
 	if (kitty_get_action(ki) == 'T' || kitty_get_action(ki) == 'p') {
@@ -2905,28 +2912,10 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		if (input_has_kitty(ictx))
 			input_reply_kitty_ok(ictx, ki);
 	} else if (kitty_get_action(ki) == 't') {
-		char	*apc;
-		size_t	 apclen;
-
-		if (kitty_get_image_id(ki) != 0 || kitty_get_image_num(ki) != 0) {
-			screen_write_kittyimage_upload(sctx, ki);
-			if (input_has_kitty(ictx))
-				input_reply_kitty_ok(ictx, ki);
-			return;
-		}
-
-		apc = kitty_print_quiet(ki, &apclen);
-		if (apc != NULL) {
-			tty_kitty_passthrough(wp, apc, apclen, sctx->s->cx,
-			    sctx->s->cy);
-			free(apc);
-		}
+		screen_write_kittyimage_upload(sctx, ki);
 		if (input_has_kitty(ictx))
 			input_reply_kitty_ok(ictx, ki);
-		kitty_free(ki);
 	} else if (kitty_get_action(ki) == 'd') {
-		char	*apc;
-		size_t	 apclen;
 		int	 redraw;
 
 		redraw = image_kitty_delete(sctx->s, ki);
@@ -2937,16 +2926,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			return;
 		}
 		if (redraw && wp != NULL)
-			wp->flags |= PANE_REDRAW;
-		/* Deletion commands still need to reach attached kitty clients. */
-		apc = kitty_print_quiet(ki, &apclen);
-		if (apc == NULL) {
-			kitty_free(ki);
-			return;
-		}
-		tty_kitty_passthrough(wp, apc, apclen, sctx->s->cx,
-		    sctx->s->cy);
-		free(apc);
+			server_redraw_window(wp->window);
 		if (input_has_kitty(ictx))
 			input_reply_kitty_ok(ictx, ki);
 		kitty_free(ki);

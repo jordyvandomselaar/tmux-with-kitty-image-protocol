@@ -64,6 +64,8 @@ struct kitty_image {
 	u_int		 source_h;    /* h=: source rectangle height */
 	u_int		 cell_x;      /* X=: horizontal cell offset */
 	u_int		 cell_y;      /* Y=: vertical cell offset */
+	u_int		 terminal_image_id;
+	u_int		 terminal_placement_id;
 	int		 z_index;     /* z=: z-index */
 	char		 compression; /* o=: 'z'=zlib, 0=none */
 	char		 delete_what; /* d=: delete target (used with a=d) */
@@ -508,6 +510,30 @@ kitty_get_z_index(struct kitty_image *ki)
 }
 
 u_int
+kitty_get_terminal_image_id(struct kitty_image *ki)
+{
+	return (ki->terminal_image_id);
+}
+
+void
+kitty_set_terminal_image_id(struct kitty_image *ki, u_int image_id)
+{
+	ki->terminal_image_id = image_id;
+}
+
+u_int
+kitty_get_terminal_placement_id(struct kitty_image *ki)
+{
+	return (ki->terminal_placement_id);
+}
+
+void
+kitty_set_terminal_placement_id(struct kitty_image *ki, u_int placement_id)
+{
+	ki->terminal_placement_id = placement_id;
+}
+
+u_int
 kitty_get_quiet(struct kitty_image *ki)
 {
 	return (ki->quiet);
@@ -645,16 +671,43 @@ kitty_control_add_quiet(struct kitty_control_override *overrides, size_t n,
 	return (n + 1);
 }
 
+static size_t
+kitty_control_add_namespace(struct kitty_image *ki,
+    struct kitty_control_override *overrides, size_t n, char *imagebuf,
+    size_t imagebuflen, char *placementbuf, size_t placementbuflen)
+{
+	if (ki->terminal_image_id != 0) {
+		snprintf(imagebuf, imagebuflen, "%u", ki->terminal_image_id);
+		overrides[n].key = 'i';
+		overrides[n].value = imagebuf;
+		n++;
+		overrides[n].key = 'I';
+		overrides[n].value = NULL;
+		n++;
+	}
+	if (ki->terminal_placement_id != 0) {
+		snprintf(placementbuf, placementbuflen, "%u",
+		    ki->terminal_placement_id);
+		overrides[n].key = 'p';
+		overrides[n].value = placementbuf;
+		n++;
+	}
+	return (n);
+}
+
 static char *
 kitty_control_for_command(struct kitty_image *ki, u_int quiet,
     const struct kitty_control_override *extra, size_t nextra, size_t *outlen)
 {
 	struct kitty_control_override	 overrides[16];
-	char				 quietbuf[32];
+	char				 quietbuf[32], imagebuf[32];
+	char				 placementbuf[32];
 	size_t				 i, n;
 
 	n = kitty_control_add_quiet(overrides, 0, quiet, quietbuf,
 	    sizeof quietbuf);
+	n = kitty_control_add_namespace(ki, overrides, n, imagebuf,
+	    sizeof imagebuf, placementbuf, sizeof placementbuf);
 	for (i = 0; i < nextra; i++)
 		overrides[n++] = extra[i];
 	return (kitty_control_with_overrides(ki, overrides, n, outlen));
@@ -666,7 +719,8 @@ kitty_control_for_chunk(struct kitty_image *ki, int first, int more,
     size_t *outlen)
 {
 	struct kitty_control_override	 overrides[16];
-	char				 morebuf[2], quietbuf[32];
+	char				 morebuf[2], quietbuf[32], imagebuf[32];
+	char				 placementbuf[32];
 	char				*ctrl;
 	size_t				 i, n;
 
@@ -676,6 +730,8 @@ kitty_control_for_chunk(struct kitty_image *ki, int first, int more,
 		overrides[0].value = morebuf;
 		n = kitty_control_add_quiet(overrides, 1, quiet, quietbuf,
 		    sizeof quietbuf);
+		n = kitty_control_add_namespace(ki, overrides, n, imagebuf,
+		    sizeof imagebuf, placementbuf, sizeof placementbuf);
 		for (i = 0; i < nextra; i++)
 			overrides[n++] = extra[i];
 		return (kitty_control_with_overrides(ki, overrides, n, outlen));

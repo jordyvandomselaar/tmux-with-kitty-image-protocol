@@ -979,6 +979,7 @@ enum image_type {
 struct image {
 	enum image_type		 type;
 	struct screen		*s;
+	struct images		*images;
 	union {
 #ifdef ENABLE_SIXEL
 		struct sixel_image	*sixel;
@@ -3855,6 +3856,8 @@ char		*regsub(const char *, const char *, const char *, int);
 #ifdef ENABLE_IMAGES
 /* image.c */
 int		 image_free_all(struct screen *);
+int		 image_free_all_saved(struct screen *);
+void		 image_reparent_all(struct images *);
 struct image	*image_store(struct screen *, enum image_type, void *);
 #ifdef ENABLE_KITTY_IMAGES
 struct image	*image_store_kitty_upload(struct screen *,
@@ -3887,6 +3890,7 @@ struct screen	*sixel_to_screen(struct sixel_image *);
 struct kitty_image *kitty_parse(const u_char *, size_t, u_int, u_int);
 void		 kitty_free(struct kitty_image *);
 void		 kitty_size_in_cells(struct kitty_image *, u_int *, u_int *);
+int		 kitty_has_height(struct kitty_image *);
 char		 kitty_get_action(struct kitty_image *);
 char		 kitty_get_medium(struct kitty_image *);
 u_int		 kitty_get_image_id(struct kitty_image *);

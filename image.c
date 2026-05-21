@@ -53,14 +53,12 @@ image_log(struct image *im, const char* from, const char* fmt, ...)
 static void
 image_free(struct image *im)
 {
-	struct screen	*s = im->s;
-
 	image_log(im, __func__, NULL);
 
 	TAILQ_REMOVE(&all_images, im, all_entry);
 	all_images_count--;
 
-	TAILQ_REMOVE(&s->images, im, entry);
+	TAILQ_REMOVE(im->images, im, entry);
 
 	switch (im->type) {
 #ifdef ENABLE_SIXEL
@@ -180,17 +178,38 @@ image_kitty_replace(struct screen *s, struct kitty_image *ki)
 }
 #endif
 
-int
-image_free_all(struct screen *s)
+static int
+image_free_all1(struct images *images)
 {
 	struct image	*im, *im1;
-	int		 redraw = !TAILQ_EMPTY(&s->images);
+	int		 redraw = !TAILQ_EMPTY(images);
 
 	if (redraw)
 		log_debug ("%s", __func__);
-	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1)
+	TAILQ_FOREACH_SAFE(im, images, entry, im1)
 		image_free(im);
 	return (redraw);
+}
+
+int
+image_free_all(struct screen *s)
+{
+	return (image_free_all1(&s->images));
+}
+
+int
+image_free_all_saved(struct screen *s)
+{
+	return (image_free_all1(&s->saved_images));
+}
+
+void
+image_reparent_all(struct images *images)
+{
+	struct image	*im;
+
+	TAILQ_FOREACH(im, images, entry)
+		im->images = images;
 }
 
 /* Create text placeholder for an image. */
@@ -261,6 +280,7 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 
 	im->type = type;
 	im->s = s;
+	im->images = &s->images;
 	im->hidden = hidden;
 
 	im->px = s->cx;

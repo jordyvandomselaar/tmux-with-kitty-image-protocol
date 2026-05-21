@@ -35,6 +35,9 @@ static void	screen_redraw_draw_scrollbar(struct screen_redraw_ctx *,
 		    struct window_pane *, int, int, int, u_int, u_int, u_int);
 static void	screen_redraw_draw_pane_scrollbar(struct screen_redraw_ctx *,
 		    struct window_pane *);
+#ifdef ENABLE_IMAGES
+static int	screen_redraw_window_has_images(struct window *);
+#endif
 
 #define START_ISOLATE "\342\201\246"
 #define END_ISOLATE   "\342\201\251"
@@ -652,6 +655,20 @@ screen_redraw_set_context(struct client *c, struct screen_redraw_ctx *ctx)
 	    ctx->statustop);
 }
 
+#ifdef ENABLE_IMAGES
+static int
+screen_redraw_window_has_images(struct window *w)
+{
+	struct window_pane	*wp;
+
+	TAILQ_FOREACH(wp, &w->panes, entry) {
+		if (wp->screen != NULL && !TAILQ_EMPTY(&wp->screen->images))
+			return (1);
+	}
+	return (0);
+}
+#endif
+
 /* Redraw entire screen. */
 void
 screen_redraw_screen(struct client *c)
@@ -722,9 +739,17 @@ screen_redraw_pane(struct client *c, struct window_pane *wp,
 
 	if (!redraw_scrollbar_only) {
 #ifdef ENABLE_KITTY_IMAGES
-		tty_kitty_delete_all(&c->tty);
+		if ((c->tty.term->flags & TERM_KITTY) &&
+		    screen_redraw_window_has_images(wp->window)) {
+			/*
+			 * Kitty's delete-all command clears terminal-global image state, so
+			 * redraw every visible pane after using it from a pane redraw path.
+			 */
+			tty_kitty_delete_all(&c->tty);
+			screen_redraw_draw_panes(&ctx);
+		} else
 #endif
-		screen_redraw_draw_pane(&ctx, wp);
+			screen_redraw_draw_pane(&ctx, wp);
 	}
 
 	if (window_pane_show_scrollbar(wp, ctx.pane_scrollbars))

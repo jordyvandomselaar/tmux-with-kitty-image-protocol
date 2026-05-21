@@ -2509,7 +2509,8 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 	}
 
 	/* Move cursor past the resolved image footprint unless disabled. */
-	if (im != NULL && im->sy > 0 && !kitty_get_cursor_policy(ki))
+	if (im != NULL && im->sy > 0 && kitty_has_height(ki) &&
+	    !kitty_get_cursor_policy(ki))
 		screen_write_cursormove(ctx, 0, s->cy + im->sy, 0);
 }
 #endif

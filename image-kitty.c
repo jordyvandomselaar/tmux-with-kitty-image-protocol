@@ -18,12 +18,16 @@
 
 #include <sys/types.h>
 
+#include <netinet/in.h>
+
+#include <resolv.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "tmux.h"
 
 #define KITTY_CHUNK_LIMIT 4096
+#define KITTY_PNG_HEADER_SIZE 24
 
 /*
  * kitty_image stores the raw decoded pixel data and metadata from a kitty
@@ -171,6 +175,39 @@ kitty_parse_control(const char *ctrl, size_t ctrllen, struct kitty_image *ki)
 	return (0);
 }
 
+static u_int
+kitty_get_be32(const u_char *p)
+{
+	return (((u_int)p[0] << 24) | ((u_int)p[1] << 16) |
+	    ((u_int)p[2] << 8) | p[3]);
+}
+
+static void
+kitty_update_png_size(struct kitty_image *ki)
+{
+	u_char	*out;
+	size_t	 size;
+	int	 outlen;
+
+	if (ki->format != 100 || ki->encoded == NULL || ki->encodedlen == 0)
+		return;
+	if (ki->pixel_w != 0 && ki->pixel_h != 0)
+		return;
+
+	size = ((ki->encodedlen + 3) / 4) * 3;
+	out = xmalloc(size);
+	outlen = b64_pton(ki->encoded, out, size);
+	if (outlen >= KITTY_PNG_HEADER_SIZE &&
+	    memcmp(out, "\211PNG\r\n\032\n", 8) == 0 &&
+	    memcmp(out + 12, "IHDR", 4) == 0) {
+		if (ki->pixel_w == 0)
+			ki->pixel_w = kitty_get_be32(out + 16);
+		if (ki->pixel_h == 0)
+			ki->pixel_h = kitty_get_be32(out + 20);
+	}
+	free(out);
+}
+
 /*
  * Parse a kitty APC body (after the leading 'G').
  * Stores the original control string and base64 payload verbatim for
@@ -242,6 +279,8 @@ kitty_free(struct kitty_image *ki)
 void
 kitty_size_in_cells(struct kitty_image *ki, u_int *sx, u_int *sy)
 {
+	kitty_update_png_size(ki);
+
 	*sx = ki->cols;
 	*sy = ki->rows;
 
@@ -261,6 +300,18 @@ kitty_size_in_cells(struct kitty_image *ki, u_int *sx, u_int *sy)
 		*sx = 10;
 	if (*sy == 0)
 		*sy = 10;
+}
+
+int
+kitty_has_height(struct kitty_image *ki)
+{
+	kitty_update_png_size(ki);
+
+	if (ki->rows != 0)
+		return (1);
+	if (ki->pixel_h != 0 && ki->ypixel != 0)
+		return (1);
+	return (0);
 }
 
 char

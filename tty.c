@@ -2220,7 +2220,8 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 	struct image		*im = ctx->ptr;
 	char			*data;
 	size_t			 size;
-	u_int			 cx = ctx->ocx, cy = ctx->ocy;
+	u_int			 cx = ctx->ocx, cy = ctx->ocy, sx, sy;
+	u_int			 i, j, x, y, rx, ry;
 	int			 fallback = 0;
 
 	if (im == NULL || im->data.kitty == NULL)
@@ -2232,6 +2233,11 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 
 	log_debug("%s: image at %u,%u (fallback=%d)", __func__, cx, cy,
 	    fallback);
+	kitty_size_in_cells(im->data.kitty, &sx, &sy);
+	if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y, &rx, &ry))
+		return;
+	if (fallback == 0 && (i != 0 || j != 0 || rx != sx || ry != sy))
+		return;
 
 	if (fallback == 1 && im->hidden)
 		return;
@@ -2249,7 +2255,7 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 		log_debug("%s: %zu bytes", __func__, size);
 		tty_region_off(tty);
 		tty_margin_off(tty);
-		tty_cursor(tty, cx + ctx->xoff, cy + ctx->yoff);
+		tty_cursor(tty, x, y);
 
 		tty->flags |= TTY_NOBLOCK;
 		tty_add(tty, data, size);

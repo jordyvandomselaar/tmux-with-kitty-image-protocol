@@ -131,6 +131,7 @@ screen_reinit(struct screen *s)
 
 #ifdef ENABLE_IMAGES
 	image_free_all(s);
+	image_free_all_saved(s);
 #endif
 
 	screen_set_progress_bar(s, PROGRESS_BAR_HIDDEN, 0);
@@ -692,6 +693,7 @@ screen_alternate_on(struct screen *s, struct grid_cell *gc, int cursor)
 
 #ifdef ENABLE_IMAGES
 	TAILQ_CONCAT(&s->saved_images, &s->images, entry);
+	image_reparent_all(&s->saved_images);
 #endif
 
 	grid_view_clear(s->grid, 0, 0, sx, sy, 8);
@@ -751,6 +753,7 @@ screen_alternate_off(struct screen *s, struct grid_cell *gc, int cursor)
 #ifdef ENABLE_IMAGES
 	image_free_all(s);
 	TAILQ_CONCAT(&s->images, &s->saved_images, entry);
+	image_reparent_all(&s->images);
 #endif
 
 	if (s->cx > screen_size_x(s) - 1)

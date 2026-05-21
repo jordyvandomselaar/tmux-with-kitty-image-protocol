@@ -2906,6 +2906,9 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			    "EINVAL:unsupported transmission medium");
 		} else if (input_has_kitty(ictx))
 			input_reply_kitty_ok(ictx, ki);
+		else
+			input_reply_kitty_error(ictx, ki,
+			    "ENOSYS:kitty graphics unavailable");
 		kitty_free(ki);
 		return;
 	}
@@ -2956,14 +2959,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			input_reply_kitty_ok(ictx, ki);
 		kitty_free(ki);
 	} else {
-		/* For other actions (delete, etc.), pass through. */
-		char	*apc;
-		size_t	 apclen;
-
-		apclen = xasprintf(&apc, "\033_%s\033\\", ictx->input_buf);
-		tty_kitty_passthrough(wp, apc, apclen, sctx->s->cx,
-		    sctx->s->cy);
-		free(apc);
+		input_reply_kitty_error(ictx, ki, "ENOSYS:unsupported action");
 		kitty_free(ki);
 	}
 }

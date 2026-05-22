@@ -1274,11 +1274,15 @@ kitty_print_clipped(struct kitty_image *ki, u_int xoff, u_int yoff,
 }
 
 char *
-kitty_delete_owned(size_t *outlen)
+kitty_delete_image(u_int image_id, u_int placement_id, size_t *outlen)
 {
 	char	*out;
 
-	*outlen = xasprintf(&out, "\033_Ga=d,d=r,x=%u,y=%u,q=2\033\\",
-	    0x80000000U, UINT_MAX);
+	if (placement_id != 0) {
+		*outlen = xasprintf(&out, "\033_Ga=d,d=i,i=%u,p=%u,q=2\033\\",
+		    image_id, placement_id);
+		return (out);
+	}
+	*outlen = xasprintf(&out, "\033_Ga=d,d=i,i=%u,q=2\033\\", image_id);
 	return (out);
 }

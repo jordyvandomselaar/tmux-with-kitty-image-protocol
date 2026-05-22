@@ -2745,6 +2745,16 @@ input_reply_kitty(struct input_ctx *ictx, struct kitty_image *ki,
 	u_int	 placement_id = kitty_get_placement_id(ki);
 	char	 action = kitty_get_action(ki);
 
+	if (image_id != 0 && image_num != 0 && placement_id != 0) {
+		input_reply(ictx, 0, "\033_Gi=%u,I=%u,p=%u;%s\033\\",
+		    image_id, image_num, placement_id, message);
+		return;
+	}
+	if (image_id != 0 && image_num != 0) {
+		input_reply(ictx, 0, "\033_Gi=%u,I=%u;%s\033\\", image_id,
+		    image_num, message);
+		return;
+	}
 	if (image_id != 0 && placement_id != 0) {
 		input_reply(ictx, 0, "\033_Gi=%u,p=%u;%s\033\\",
 		    image_id, placement_id, message);
@@ -2786,7 +2796,7 @@ input_reply_kitty_error(struct input_ctx *ictx, struct kitty_image *ki,
 }
 
 static int
-input_kitty_has_render_client(struct window_pane *wp)
+input_kitty_has_capable_client(void)
 {
 	struct client	*c;
 
@@ -2796,11 +2806,6 @@ input_kitty_has_render_client(struct window_pane *wp)
 		if (c->flags & CLIENT_SUSPENDED)
 			continue;
 		if (~c->tty.term->flags & TERM_KITTY)
-			continue;
-		if (c->session->curw == NULL ||
-		    c->session->curw->window != wp->window)
-			continue;
-		if (!window_pane_visible(wp))
 			continue;
 		return (1);
 	}
@@ -2896,7 +2901,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		if (kitty_get_medium(ki) != 'd') {
 			input_reply_kitty_error(ictx, ki,
 			    "EINVAL:unsupported transmission medium");
-		} else if (!input_kitty_has_render_client(wp)) {
+		} else if (!input_kitty_has_capable_client()) {
 			input_reply_kitty_error(ictx, ki,
 			    "ENOSYS:kitty graphics unavailable");
 		} else

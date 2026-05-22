@@ -123,6 +123,7 @@ sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
 REPLY=$(tr -s '[:space:]' ' ' <$TMP)
 echo "$REPLY" | grep -q '1b 5f 47 69 3d' || exit 1
+echo "$REPLY" | grep -q '2c 49 3d 37' || exit 1
 echo "$REPLY" | grep -q '3b 4f 4b' || exit 1
 echo "$REPLY" | grep -q '1b 5f 47 49 3d 37 3b 4f 4b' && exit 1
 

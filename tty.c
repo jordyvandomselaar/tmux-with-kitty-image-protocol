@@ -71,6 +71,9 @@ static int	tty_check_overlay(struct tty *, u_int, u_int);
 static void	tty_write_one(void (*)(struct tty *, const struct tty_ctx *),
 		    struct client *, struct tty_ctx *);
 #endif
+#ifdef ENABLE_KITTY_IMAGES
+static void	tty_kitty_images_clear(struct tty *);
+#endif
 
 #define tty_use_margin(tty) \
 	(tty->term->flags & TERM_DECSLRM)
@@ -108,6 +111,9 @@ tty_init(struct tty *tty, struct client *c)
 	tty->cstyle = SCREEN_CURSOR_DEFAULT;
 	tty->ccolour = -1;
 	tty->fg = tty->bg = -1;
+#ifdef ENABLE_KITTY_IMAGES
+	TAILQ_INIT(&tty->kitty_images);
+#endif
 
 	if (tcgetattr(c->fd, &tty->tio) != 0)
 		return (-1);
@@ -522,6 +528,9 @@ tty_close(struct tty *tty)
 	if (event_initialized(&tty->key_timer))
 		evtimer_del(&tty->key_timer);
 	tty_stop_tty(tty);
+#ifdef ENABLE_KITTY_IMAGES
+	tty_kitty_images_clear(tty);
+#endif
 
 	if (tty->flags & TTY_OPENED) {
 		evbuffer_free(tty->in);
@@ -2216,6 +2225,52 @@ tty_has_kitty(struct tty *tty)
 	return (tty->term->flags & TERM_KITTY);
 }
 
+static void
+tty_kitty_images_clear(struct tty *tty)
+{
+	struct tty_kitty_image	*ki, *ki1;
+
+	TAILQ_FOREACH_SAFE(ki, &tty->kitty_images, entry, ki1) {
+		TAILQ_REMOVE(&tty->kitty_images, ki, entry);
+		free(ki);
+	}
+}
+
+static void
+tty_kitty_note_resource(struct tty *tty, u_int image_id, u_int placement_id)
+{
+	struct tty_kitty_image	*existing, *new;
+
+	if (image_id == 0)
+		return;
+
+	TAILQ_FOREACH(existing, &tty->kitty_images, entry) {
+		if (existing->image_id == image_id &&
+		    existing->placement_id == placement_id)
+			return;
+	}
+	new = xcalloc(1, sizeof *new);
+	new->image_id = image_id;
+	new->placement_id = placement_id;
+	TAILQ_INSERT_TAIL(&tty->kitty_images, new, entry);
+}
+
+static void
+tty_kitty_note_image(struct tty *tty, struct kitty_image *ki)
+{
+	char	 action;
+	u_int	 image_id, placement_id;
+
+	image_id = kitty_get_terminal_image_id(ki);
+	placement_id = kitty_get_terminal_placement_id(ki);
+	action = kitty_get_action(ki);
+
+	if (action == 'T' || action == 't' || placement_id == 0)
+		tty_kitty_note_resource(tty, image_id, 0);
+	if (placement_id != 0)
+		tty_kitty_note_resource(tty, image_id, placement_id);
+}
+
 void
 tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 {
@@ -2224,7 +2279,7 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 	size_t			 size;
 	u_int			 cx = ctx->ocx, cy = ctx->ocy, sx, sy;
 	u_int			 i, j, x, y, rx, ry;
-	int			 fallback = 0, clipped;
+	int			 fallback = 0, clipped, sent_kitty = 0;
 
 	if (im == NULL || im->data.kitty == NULL)
 		return;
@@ -2239,6 +2294,7 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 		if (fallback == 1)
 			return;
 		data = kitty_print_quiet(im->data.kitty, &size);
+		sent_kitty = 1;
 		x = cx;
 		y = cy;
 	} else if (fallback == 1) {
@@ -2261,11 +2317,14 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 		if (!clipped) {
 			/* Re-serialize for redraw without moving the terminal cursor. */
 			data = kitty_print_redraw(im->data.kitty, &size);
+			sent_kitty = 1;
 		} else {
 			/* Re-serialize a cropped placement for pane-bound redraw. */
 			data = kitty_print_clipped(im->data.kitty, im->kitty_xoff + i,
 			    im->kitty_yoff + j, rx, ry, &size);
-			if (data == NULL) {
+			if (data != NULL)
+				sent_kitty = 1;
+			else {
 				data = xstrdup(im->fallback);
 				size = strlen(data);
 			}
@@ -2277,6 +2336,8 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 		tty_region_off(tty);
 		tty_margin_off(tty);
 		tty_cursor(tty, x, y);
+		if (sent_kitty)
+			tty_kitty_note_image(tty, im->data.kitty);
 
 		tty->flags |= TTY_NOBLOCK;
 		tty_add(tty, data, size);
@@ -2340,19 +2401,27 @@ tty_kitty_passthrough(struct window_pane *wp, const char *data, size_t len,
 void
 tty_kitty_delete_owned(struct tty *tty)
 {
-	char	*data;
-	size_t	 size;
+	struct tty_kitty_image	*ki, *ki1;
+	char			*data;
+	size_t			 size;
+	int			 changed = 0;
 
 	if (!tty_has_kitty(tty))
 		return;
 
-	if ((data = kitty_delete_owned(&size)) == NULL)
-		return;
+	TAILQ_FOREACH_SAFE(ki, &tty->kitty_images, entry, ki1) {
+		data = kitty_delete_image(ki->image_id, ki->placement_id, &size);
 
-	tty->flags |= TTY_NOBLOCK;
-	tty_add(tty, data, size);
-	tty_invalidate(tty);
-	free(data);
+		tty->flags |= TTY_NOBLOCK;
+		tty_add(tty, data, size);
+		free(data);
+
+		TAILQ_REMOVE(&tty->kitty_images, ki, entry);
+		free(ki);
+		changed = 1;
+	}
+	if (changed)
+		tty_invalidate(tty);
 }
 
 /*
@@ -2362,14 +2431,25 @@ tty_kitty_delete_owned(struct tty *tty)
 void
 tty_kitty_delete_owned_pane(struct window_pane *wp)
 {
-	char	*data;
-	size_t	 size;
+	struct client	*c;
+	struct tty	*tty;
 
-	if ((data = kitty_delete_owned(&size)) == NULL)
-		return;
+	TAILQ_FOREACH(c, &clients, entry) {
+		if (c->session == NULL || c->tty.term == NULL)
+			continue;
+		if (c->flags & CLIENT_SUSPENDED)
+			continue;
+		if (c->tty.flags & TTY_FREEZE)
+			continue;
+		if (c->session->curw == NULL ||
+		    c->session->curw->window != wp->window)
+			continue;
+		if (!window_pane_visible(wp))
+			continue;
 
-	tty_kitty_passthrough(wp, data, size, UINT_MAX, UINT_MAX);
-	free(data);
+		tty = &c->tty;
+		tty_kitty_delete_owned(tty);
+	}
 }
 #endif
 

@@ -1661,6 +1661,16 @@ struct tty_term {
 };
 LIST_HEAD(tty_terms, tty_term);
 
+#ifdef ENABLE_KITTY_IMAGES
+struct tty_kitty_image {
+	u_int		 image_id;
+	u_int		 placement_id;
+
+	TAILQ_ENTRY(tty_kitty_image) entry;
+};
+TAILQ_HEAD(tty_kitty_images, tty_kitty_image);
+#endif
+
 /* Client terminal. */
 struct tty {
 	struct client	*client;
@@ -1746,6 +1756,10 @@ struct tty {
 
 	struct event	 key_timer;
 	struct tty_key	*key_tree;
+
+#ifdef ENABLE_KITTY_IMAGES
+	struct tty_kitty_images kitty_images;
+#endif
 };
 
 /* Terminal command context. */
@@ -3937,7 +3951,7 @@ char		*kitty_print_quiet(struct kitty_image *, size_t *);
 char		*kitty_print_redraw(struct kitty_image *, size_t *);
 char		*kitty_print_clipped(struct kitty_image *, u_int, u_int, u_int,
 		     u_int, size_t *);
-char		*kitty_delete_owned(size_t *);
+char		*kitty_delete_image(u_int, u_int, size_t *);
 #endif
 
 /* server-acl.c */

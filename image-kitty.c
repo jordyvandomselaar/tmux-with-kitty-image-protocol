@@ -1188,10 +1188,21 @@ kitty_print_quiet(struct kitty_image *ki, size_t *outlen)
 }
 
 char *
+kitty_print_redraw(struct kitty_image *ki, size_t *outlen)
+{
+	struct kitty_control_override	 overrides[1];
+
+	overrides[0].key = 'C';
+	overrides[0].value = "1";
+	return (kitty_print_with_overrides(ki, outlen,
+	    KITTY_QUIET_SUPPRESS_RESPONSES, overrides, 1));
+}
+
+char *
 kitty_print_clipped(struct kitty_image *ki, u_int xoff, u_int yoff,
     u_int cellsx, u_int cellsy, size_t *outlen)
 {
-	struct kitty_control_override	 overrides[6];
+	struct kitty_control_override	 overrides[7];
 	char				 xbuf[32], ybuf[32], wbuf[32];
 	char				 hbuf[32], cbuf[32], rbuf[32];
 	u_int				 sx, sy, source_x, source_y;
@@ -1255,17 +1266,19 @@ kitty_print_clipped(struct kitty_image *ki, u_int xoff, u_int yoff,
 	overrides[4].value = cbuf;
 	overrides[5].key = 'r';
 	overrides[5].value = rbuf;
+	overrides[6].key = 'C';
+	overrides[6].value = "1";
 
 	return (kitty_print_with_overrides(ki, outlen,
-	    KITTY_QUIET_SUPPRESS_RESPONSES, overrides, 6));
+	    KITTY_QUIET_SUPPRESS_RESPONSES, overrides, 7));
 }
 
 char *
-kitty_delete_all(size_t *outlen)
+kitty_delete_owned(size_t *outlen)
 {
 	char	*out;
 
-	out = xstrdup("\033_Ga=d,d=a,q=2\033\\");
-	*outlen = strlen(out);
+	*outlen = xasprintf(&out, "\033_Ga=d,d=r,x=%u,y=%u,q=2\033\\",
+	    0x80000000U, UINT_MAX);
 	return (out);
 }

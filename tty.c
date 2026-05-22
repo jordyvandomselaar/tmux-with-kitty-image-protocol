@@ -2259,8 +2259,8 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 		clipped = (im->kitty_xoff != 0 || im->kitty_yoff != 0 ||
 		    i != 0 || j != 0 || rx != sx || ry != sy);
 		if (!clipped) {
-			/* Re-serialize the command without terminal replies. */
-			data = kitty_print_quiet(im->data.kitty, &size);
+			/* Re-serialize for redraw without moving the terminal cursor. */
+			data = kitty_print_redraw(im->data.kitty, &size);
 		} else {
 			/* Re-serialize a cropped placement for pane-bound redraw. */
 			data = kitty_print_clipped(im->data.kitty, im->kitty_xoff + i,
@@ -2333,12 +2333,12 @@ tty_kitty_passthrough(struct window_pane *wp, const char *data, size_t len,
 }
 
 /*
- * Delete all kitty image placements from the outer terminal unconditionally.
+ * Delete tmux-owned kitty image placements from the outer terminal.
  * Called directly (not via tty_write) so it fires on every full window
  * redraw regardless of whether the current window has any stored images.
  */
 void
-tty_kitty_delete_all(struct tty *tty)
+tty_kitty_delete_owned(struct tty *tty)
 {
 	char	*data;
 	size_t	 size;
@@ -2346,7 +2346,7 @@ tty_kitty_delete_all(struct tty *tty)
 	if (!tty_has_kitty(tty))
 		return;
 
-	if ((data = kitty_delete_all(&size)) == NULL)
+	if ((data = kitty_delete_owned(&size)) == NULL)
 		return;
 
 	tty->flags |= TTY_NOBLOCK;
@@ -2356,16 +2356,16 @@ tty_kitty_delete_all(struct tty *tty)
 }
 
 /*
- * Delete all kitty image placements via passthrough for a specific pane.
+ * Delete tmux-owned kitty image placements via passthrough for a specific pane.
  * Used on terminal reset (RIS) so images are cleared from the outer terminal.
  */
 void
-tty_kitty_delete_all_pane(struct window_pane *wp)
+tty_kitty_delete_owned_pane(struct window_pane *wp)
 {
 	char	*data;
 	size_t	 size;
 
-	if ((data = kitty_delete_all(&size)) == NULL)
+	if ((data = kitty_delete_owned(&size)) == NULL)
 		return;
 
 	tty_kitty_passthrough(wp, data, size, UINT_MAX, UINT_MAX);

@@ -704,13 +704,13 @@ screen_redraw_screen(struct client *c)
 		log_debug("%s: redrawing panes", c->name);
 #ifdef ENABLE_KITTY_IMAGES
 		/*
-		 * Delete all kitty image placements before redrawing panes.
+		 * Delete tmux-owned kitty image placements before redrawing panes.
 		 * This must happen unconditionally — even when the new window
 		 * has no images — so that images from the previous window
 		 * (or from a `reset` in the shell) are cleared from the outer
 		 * terminal before new content is drawn over them.
 		 */
-		tty_kitty_delete_all(&c->tty);
+		tty_kitty_delete_owned(&c->tty);
 		c->kitty_images_generation = image_kitty_generation();
 #endif
 		screen_redraw_draw_panes(&ctx);
@@ -749,11 +749,11 @@ screen_redraw_pane(struct client *c, struct window_pane *wp,
 		    (screen_redraw_window_has_kitty_images(wp->window) ||
 		    c->kitty_images_generation != image_kitty_generation())) {
 			/*
-			 * Kitty's delete-all command clears terminal-global image
+			 * Kitty's namespace delete clears all tmux-owned image
 			 * state, so redraw every visible pane after using it from
 			 * a pane redraw path.
 			 */
-			tty_kitty_delete_all(&c->tty);
+			tty_kitty_delete_owned(&c->tty);
 			c->kitty_images_generation = image_kitty_generation();
 			screen_redraw_draw_panes(&ctx);
 		} else

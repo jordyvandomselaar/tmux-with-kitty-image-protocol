@@ -28,6 +28,9 @@ static struct images	all_images = TAILQ_HEAD_INITIALIZER(all_images);
 static u_int		all_images_count;
 #define MAX_IMAGE_COUNT 20
 #define MAX_KITTY_IMAGE_BYTES ((size_t)MAX_IMAGE_COUNT * INPUT_BUF_DEFAULT_SIZE)
+#define MAX_TOTAL_IMAGE_COUNT (MAX_IMAGE_COUNT * MAX_IMAGE_COUNT)
+#define MAX_KITTY_TOTAL_IMAGE_BYTES \
+	((size_t)MAX_TOTAL_IMAGE_COUNT * INPUT_BUF_DEFAULT_SIZE)
 
 #ifdef ENABLE_KITTY_IMAGES
 static u_int		next_kitty_public_image_id = 0x80000000U;
@@ -251,7 +254,32 @@ image_is_kitty_source_referenced(struct image *im)
 	return (0);
 }
 
-static void
+static int
+image_free_oldest_from(struct images *images)
+{
+	struct image	*im;
+
+	TAILQ_FOREACH(im, images, entry) {
+		if (!image_is_kitty_source_referenced(im)) {
+			image_free(im);
+			return (1);
+		}
+	}
+	if (TAILQ_EMPTY(images))
+		return (0);
+	image_free(TAILQ_FIRST(images));
+	return (1);
+}
+
+static int
+image_free_oldest_from_screen(struct screen *s)
+{
+	if (image_free_oldest_from(&s->images))
+		return (1);
+	return (image_free_oldest_from(&s->saved_images));
+}
+
+static int
 image_free_oldest(void)
 {
 	struct image	*im;
@@ -259,10 +287,26 @@ image_free_oldest(void)
 	TAILQ_FOREACH(im, &all_images, all_entry) {
 		if (!image_is_kitty_source_referenced(im)) {
 			image_free(im);
-			return;
+			return (1);
 		}
 	}
+	if (TAILQ_EMPTY(&all_images))
+		return (0);
 	image_free(TAILQ_FIRST(&all_images));
+	return (1);
+}
+
+static size_t
+image_kitty_bytes_from(struct images *images)
+{
+	struct image	*im;
+	size_t		 bytes = 0;
+
+	TAILQ_FOREACH(im, images, entry) {
+		if (im->type == IMAGE_KITTY)
+			bytes += kitty_size_in_bytes(im->data.kitty);
+	}
+	return (bytes);
 }
 
 static void
@@ -298,17 +342,26 @@ image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
 }
 
 static int
-image_kitty_make_room(struct kitty_image *ki)
+image_kitty_make_room(struct screen *s, struct kitty_image *ki)
 {
-	size_t	bytes;
+	size_t	bytes, screen_bytes;
 
 	bytes = kitty_size_in_bytes(ki);
 	if (bytes > MAX_KITTY_IMAGE_BYTES)
 		return (0);
-	while (kitty_images_bytes + bytes > MAX_KITTY_IMAGE_BYTES) {
-		if (TAILQ_EMPTY(&all_images))
+	screen_bytes = image_kitty_bytes_from(&s->images) +
+	    image_kitty_bytes_from(&s->saved_images);
+	while (screen_bytes + bytes > MAX_KITTY_IMAGE_BYTES) {
+		if (!image_free_oldest_from_screen(s))
 			return (0);
-		image_free_oldest();
+		screen_bytes = image_kitty_bytes_from(&s->images) +
+		    image_kitty_bytes_from(&s->saved_images);
+	}
+	while (kitty_images_bytes + bytes > MAX_KITTY_TOTAL_IMAGE_BYTES) {
+		if (image_free_oldest_from_screen(s))
+			continue;
+		if (!image_free_oldest())
+			return (0);
 	}
 	return (1);
 }
@@ -473,6 +526,17 @@ image_kitty_replace(struct screen *s, struct kitty_image *ki)
 	return (image_remove_kitty(s, ki, '\0'));
 }
 #endif
+
+static u_int
+image_count_from(struct images *images)
+{
+	struct image	*im;
+	u_int		 count = 0;
+
+	TAILQ_FOREACH(im, images, entry)
+		count++;
+	return (count);
+}
 
 static int
 image_free_all1(struct images *images)
@@ -640,7 +704,7 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 #ifdef ENABLE_KITTY_IMAGES
 	case IMAGE_KITTY:
 		image_prepare_kitty(s, data, hidden);
-		if (!image_kitty_make_room(data)) {
+		if (!image_kitty_make_room(s, data)) {
 			free(im);
 			return (NULL);
 		}
@@ -657,10 +721,24 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 	if (!hidden)
 		image_fallback(&im->fallback, type, im->sx, im->sy);
 
-	while (all_images_count + 1 >= MAX_IMAGE_COUNT &&
+	while (image_count_from(&s->images) + image_count_from(&s->saved_images) +
+	    1 >= MAX_IMAGE_COUNT) {
+#ifdef ENABLE_KITTY_IMAGES
+		if (!image_free_oldest_from_screen(s))
+			break;
+#else
+		if (TAILQ_EMPTY(&s->images))
+			break;
+		image_free(TAILQ_FIRST(&s->images));
+#endif
+	}
+	while (all_images_count + 1 >= MAX_TOTAL_IMAGE_COUNT &&
 	    !TAILQ_EMPTY(&all_images)) {
 #ifdef ENABLE_KITTY_IMAGES
-		image_free_oldest();
+		if (image_free_oldest_from_screen(s))
+			continue;
+		if (!image_free_oldest())
+			break;
 #else
 		image_free(TAILQ_FIRST(&all_images));
 #endif

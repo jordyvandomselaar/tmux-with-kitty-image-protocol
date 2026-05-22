@@ -60,21 +60,22 @@ $TMUX -f$CONF new -d \
     "stty raw -echo min 0 time 10; printf '\033_Ga=q,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=64 2>/dev/null | od -An -tx1; sleep 1"
 sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
-tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 4e 4f 53 59 53' || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \
     "stty raw -echo min 0 time 10; printf '\033_Ga=q,q=1,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=64 2>/dev/null | od -An -tx1; sleep 1"
 sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
-tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' && exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 4e 4f 53 59 53' || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \
     "stty raw -echo min 0 time 10; printf '\033_Ga=q,q=2,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=64 2>/dev/null | od -An -tx1; sleep 1"
 sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
-tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 4e 4f 53 59 53' && exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' && exit 1
 
 PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
 BAD_PNG_HEADER='iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB'

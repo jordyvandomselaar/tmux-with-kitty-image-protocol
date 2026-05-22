@@ -338,7 +338,7 @@ image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
 			    image_next_kitty_id(&next_kitty_image_id));
 	}
 
-	if (!hidden && kitty_get_placement_id(ki) != 0 &&
+	if (!hidden && (action == 'T' || action == 'p') &&
 	    kitty_get_terminal_placement_id(ki) == 0) {
 		kitty_set_terminal_placement_id(ki,
 		    image_next_kitty_id(&next_kitty_placement_id));
@@ -455,9 +455,11 @@ image_match_kitty(struct image *im, struct kitty_image *ki, char what)
 			    kitty_get_placement_id(existing) == placement_id);
 		if (placement_id != 0)
 			return (kitty_get_placement_id(existing) == placement_id);
-		if (image_id != 0 && kitty_get_placement_id(existing) == 0)
+		if (image_id != 0 && kitty_get_placement_id(existing) == 0 &&
+		    kitty_get_terminal_placement_id(existing) == 0)
 			return (kitty_get_image_id(existing) == image_id);
-		if (image_num != 0 && kitty_get_placement_id(existing) == 0)
+		if (image_num != 0 && kitty_get_placement_id(existing) == 0 &&
+		    kitty_get_terminal_placement_id(existing) == 0)
 			return (kitty_get_image_num(existing) == image_num);
 		return (0);
 	}

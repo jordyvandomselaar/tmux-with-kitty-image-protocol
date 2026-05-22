@@ -2489,7 +2489,7 @@ screen_write_sixelimage(struct screen_write_ctx *ctx, struct sixel_image *si,
 #endif
 
 #ifdef ENABLE_KITTY_IMAGES
-void
+int
 screen_write_kittyimage_upload(struct screen_write_ctx *ctx,
     struct kitty_image *ki)
 {
@@ -2498,9 +2498,11 @@ screen_write_kittyimage_upload(struct screen_write_ctx *ctx,
 	struct image		*im;
 
 	if (ki == NULL)
-		return;
+		return (0);
 
 	im = image_store_kitty_upload(s, ki);
+	if (im == NULL)
+		return (0);
 	if (im != NULL && ctx->wp != NULL) {
 		screen_write_collect_flush(ctx, 0, __func__);
 		screen_write_initctx(ctx, &ttyctx, 0);
@@ -2511,9 +2513,10 @@ screen_write_kittyimage_upload(struct screen_write_ctx *ctx,
 		ttyctx.set_client_cb = tty_set_client_cb;
 		tty_write(tty_cmd_kittyimage, &ttyctx);
 	}
+	return (1);
 }
 
-void
+int
 screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 {
 	struct screen		*s = ctx->s;
@@ -2521,10 +2524,12 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 	struct image		*im;
 
 	if (ki == NULL)
-		return;
+		return (0);
 
 	/* Store the image in the cache. */
 	im = image_store(s, IMAGE_KITTY, ki);
+	if (im == NULL)
+		return (0);
 
 	/* Trigger a tty write to send to all terminals. */
 	if (im != NULL && ctx->wp != NULL) {
@@ -2542,6 +2547,7 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 	if (im != NULL && im->sy > 0 && kitty_has_height(ki) &&
 	    !kitty_get_cursor_policy(ki))
 		screen_write_cursormove(ctx, 0, s->cy + im->sy, 0);
+	return (1);
 }
 #endif
 

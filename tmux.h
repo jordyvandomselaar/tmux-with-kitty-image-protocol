@@ -3376,9 +3376,9 @@ void	 screen_write_sixelimage(struct screen_write_ctx *,
 	     struct sixel_image *, u_int);
 #endif
 #ifdef ENABLE_KITTY_IMAGES
-void	 screen_write_kittyimage_upload(struct screen_write_ctx *,
+int	 screen_write_kittyimage_upload(struct screen_write_ctx *,
 	     struct kitty_image *);
-void	 screen_write_kittyimage(struct screen_write_ctx *,
+int	 screen_write_kittyimage(struct screen_write_ctx *,
 	     struct kitty_image *);
 #endif
 
@@ -3904,6 +3904,7 @@ struct screen	*sixel_to_screen(struct sixel_image *);
 /* image-kitty.c */
 struct kitty_image *kitty_parse(const u_char *, size_t, u_int, u_int);
 void		 kitty_free(struct kitty_image *);
+size_t		 kitty_size_in_bytes(struct kitty_image *);
 void		 kitty_size_in_cells(struct kitty_image *, u_int *, u_int *);
 int		 kitty_has_height(struct kitty_image *);
 int		 kitty_validate_payload(struct kitty_image *);

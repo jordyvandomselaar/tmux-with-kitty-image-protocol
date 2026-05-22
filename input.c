@@ -2771,7 +2771,7 @@ input_reply_kitty(struct input_ctx *ictx, struct kitty_image *ki,
 static void
 input_reply_kitty_ok(struct input_ctx *ictx, struct kitty_image *ki)
 {
-	if (kitty_get_quiet(ki) == 1)
+	if (kitty_get_quiet(ki) >= 1)
 		return;
 	input_reply_kitty(ictx, ki, "OK");
 }
@@ -2780,7 +2780,7 @@ static void
 input_reply_kitty_error(struct input_ctx *ictx, struct kitty_image *ki,
     const char *message)
 {
-	if (kitty_get_quiet(ki) == 2)
+	if (kitty_get_quiet(ki) >= 2)
 		return;
 	input_reply_kitty(ictx, ki, message);
 }
@@ -2815,6 +2815,9 @@ input_apc_kitty_image(struct input_ctx *ictx)
 	ki = kitty_parse(ictx->input_buf + 1, ictx->input_len - 1,
 	    w->xpixel, w->ypixel);
 	if (ki == NULL) {
+		if (ictx->kitty_pending != NULL)
+			input_reply_kitty_error(ictx, ictx->kitty_pending,
+			    "EINVAL:invalid image data");
 		kitty_free(ictx->kitty_pending);
 		ictx->kitty_pending = NULL;
 		return;
@@ -2822,6 +2825,8 @@ input_apc_kitty_image(struct input_ctx *ictx)
 
 	if (ictx->kitty_pending != NULL) {
 		if (!kitty_is_continuation(ki)) {
+			input_reply_kitty_error(ictx, ictx->kitty_pending,
+			    "EINVAL:invalid image data");
 			kitty_free(ictx->kitty_pending);
 			ictx->kitty_pending = NULL;
 			kitty_free(ki);
@@ -2837,6 +2842,8 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			ictx->kitty_pending = NULL;
 			break;
 		default:
+			input_reply_kitty_error(ictx, ictx->kitty_pending,
+			    "EINVAL:invalid image data");
 			kitty_free(ictx->kitty_pending);
 			ictx->kitty_pending = NULL;
 			kitty_free(ki);
@@ -2888,10 +2895,20 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			kitty_free(ki);
 			return;
 		}
-		screen_write_kittyimage(sctx, ki);
+		if (!screen_write_kittyimage(sctx, ki)) {
+			input_reply_kitty_error(ictx, ki,
+			    "EINVAL:image data too large");
+			kitty_free(ki);
+			return;
+		}
 		input_reply_kitty_ok(ictx, ki);
 	} else if (kitty_get_action(ki) == 't') {
-		screen_write_kittyimage_upload(sctx, ki);
+		if (!screen_write_kittyimage_upload(sctx, ki)) {
+			input_reply_kitty_error(ictx, ki,
+			    "EINVAL:image data too large");
+			kitty_free(ki);
+			return;
+		}
 		input_reply_kitty_ok(ictx, ki);
 	} else if (kitty_get_action(ki) == 'd') {
 		int	 redraw;

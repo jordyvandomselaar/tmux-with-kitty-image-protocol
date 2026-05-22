@@ -66,7 +66,7 @@ $TMUX -f$CONF new -d \
     "stty raw -echo min 0 time 10; printf '\033_Ga=q,q=2,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=64 2>/dev/null | od -An -tx1; sleep 1"
 sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
-tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' && exit 1
 
 PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
 ZLIB_RGB_1X1='eJxjYGAAAAADAAE='
@@ -157,6 +157,37 @@ $TMUX -f$CONF new -d \
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-abort/ { print NR; exit }' $TMP)" = 1 ] || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=T,i=73,t=d,f=24,s=2,v=1,m=1;AAAA\033\\\\\033_Gbad\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=t,q=1,i=81,t=d,f=24,s=1,v=1;AAAA\033\\\\\033_Ga=d,q=1,d=I,i=81\033\\\\\033_Ga=p,q=1,i=81,c=1,r=1\033\\\\after-delete\\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL:unknown image id' $TMP || exit 1
+grep -q 'after-delete' $TMP || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=t,q=1,i=82,t=d,f=24,s=1,v=1;AAAA\033\\\\\033[2J\033_Ga=p,q=1,i=82,c=1,r=1\033\\\\after-clear\\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL:unknown image id' $TMP || exit 1
+grep -q 'after-clear' $TMP || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=t,q=1,i=83,t=d,f=24,s=1,v=1;AAAA\033\\\\\033_Ga=p,q=1,i=83,c=1,r=1\033\\\\\033[K\033_Ga=p,q=1,i=83,c=1,r=1\033\\\\after-erase\\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+grep -q 'after-erase' $TMP || exit 1
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d -x 40 -y 8 \

@@ -27,12 +27,14 @@
 static struct images	all_images = TAILQ_HEAD_INITIALIZER(all_images);
 static u_int		all_images_count;
 #define MAX_IMAGE_COUNT 20
+#define MAX_KITTY_IMAGE_BYTES ((size_t)MAX_IMAGE_COUNT * INPUT_BUF_DEFAULT_SIZE)
 
 #ifdef ENABLE_KITTY_IMAGES
 static u_int		next_kitty_public_image_id = 0x80000000U;
 static u_int		next_kitty_image_id = 0x80000000U;
 static u_int		next_kitty_placement_id = 0x80000000U;
 static u_int		kitty_images_generation;
+static size_t		kitty_images_bytes;
 #endif
 
 static void		 image_fallback(char **, enum image_type, u_int, u_int);
@@ -69,6 +71,12 @@ image_free(struct image *im)
 	if (im->type == IMAGE_KITTY && !im->hidden) {
 		if (++kitty_images_generation == 0)
 			kitty_images_generation = 1;
+	}
+	if (im->type == IMAGE_KITTY) {
+		if (kitty_images_bytes >= kitty_size_in_bytes(im->data.kitty))
+			kitty_images_bytes -= kitty_size_in_bytes(im->data.kitty);
+		else
+			kitty_images_bytes = 0;
 	}
 #endif
 
@@ -265,6 +273,22 @@ image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
 		kitty_set_terminal_placement_id(ki,
 		    image_next_kitty_id(&next_kitty_placement_id));
 	}
+}
+
+static int
+image_kitty_make_room(struct kitty_image *ki)
+{
+	size_t	bytes;
+
+	bytes = kitty_size_in_bytes(ki);
+	if (bytes > MAX_KITTY_IMAGE_BYTES)
+		return (0);
+	while (kitty_images_bytes + bytes > MAX_KITTY_IMAGE_BYTES) {
+		if (TAILQ_EMPTY(&all_images))
+			return (0);
+		image_free_oldest();
+	}
+	return (1);
 }
 
 static int
@@ -592,6 +616,10 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 #endif
 #ifdef ENABLE_KITTY_IMAGES
 	case IMAGE_KITTY:
+		if (!image_kitty_make_room(data)) {
+			free(im);
+			return (NULL);
+		}
 		image_kitty_replace(s, data);
 		image_prepare_kitty(s, data, hidden);
 		im->data.kitty = data;
@@ -606,17 +634,24 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 	if (!hidden)
 		image_fallback(&im->fallback, type, im->sx, im->sy);
 
-	image_log(im, __func__, NULL);
-	TAILQ_INSERT_TAIL(&s->images, im, entry);
-
-	TAILQ_INSERT_TAIL(&all_images, im, all_entry);
-	if (++all_images_count == MAX_IMAGE_COUNT) {
+	while (all_images_count + 1 >= MAX_IMAGE_COUNT &&
+	    !TAILQ_EMPTY(&all_images)) {
 #ifdef ENABLE_KITTY_IMAGES
 		image_free_oldest();
 #else
 		image_free(TAILQ_FIRST(&all_images));
 #endif
 	}
+
+	image_log(im, __func__, NULL);
+	TAILQ_INSERT_TAIL(&s->images, im, entry);
+
+	TAILQ_INSERT_TAIL(&all_images, im, all_entry);
+#ifdef ENABLE_KITTY_IMAGES
+	if (type == IMAGE_KITTY)
+		kitty_images_bytes += kitty_size_in_bytes(data);
+#endif
+	all_images_count++;
 
 	return (im);
 }

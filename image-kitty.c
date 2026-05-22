@@ -31,7 +31,7 @@
 #define KITTY_CHUNK_LIMIT 4096
 #define KITTY_INFLATE_LIMIT INPUT_BUF_DEFAULT_SIZE
 #define KITTY_PNG_HEADER_SIZE 24
-#define KITTY_QUIET_SUPPRESS_OK 1
+#define KITTY_QUIET_SUPPRESS_RESPONSES 2
 #define KITTY_QUIET_UNCHANGED ((u_int)-1)
 
 struct kitty_control_override {
@@ -445,6 +445,14 @@ kitty_free(struct kitty_image *ki)
 	free(ki->encoded);
 	free(ki->ctrl);
 	free(ki);
+}
+
+size_t
+kitty_size_in_bytes(struct kitty_image *ki)
+{
+	if (ki == NULL)
+		return (0);
+	return (sizeof *ki + ki->encodedlen + ki->ctrllen);
 }
 
 /*
@@ -960,7 +968,7 @@ char *
 kitty_print_quiet(struct kitty_image *ki, size_t *outlen)
 {
 	return (kitty_print_with_overrides(ki, outlen,
-	    KITTY_QUIET_SUPPRESS_OK, NULL, 0));
+	    KITTY_QUIET_SUPPRESS_RESPONSES, NULL, 0));
 }
 
 char *
@@ -1033,7 +1041,7 @@ kitty_print_clipped(struct kitty_image *ki, u_int xoff, u_int yoff,
 	overrides[5].value = rbuf;
 
 	return (kitty_print_with_overrides(ki, outlen,
-	    KITTY_QUIET_SUPPRESS_OK, overrides, 6));
+	    KITTY_QUIET_SUPPRESS_RESPONSES, overrides, 6));
 }
 
 char *
@@ -1041,7 +1049,7 @@ kitty_delete_all(size_t *outlen)
 {
 	char	*out;
 
-	out = xstrdup("\033_Ga=d,d=a,q=1\033\\");
+	out = xstrdup("\033_Ga=d,d=a,q=2\033\\");
 	*outlen = strlen(out);
 	return (out);
 }

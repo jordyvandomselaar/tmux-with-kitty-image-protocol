@@ -2293,7 +2293,10 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 	if (im->hidden) {
 		if (fallback == 1)
 			return;
-		data = kitty_print_quiet(im->data.kitty, &size);
+		if (kitty_get_action(im->data.kitty) == 'T')
+			data = kitty_print_upload(im->data.kitty, &size);
+		else
+			data = kitty_print_quiet(im->data.kitty, &size);
 		sent_kitty = 1;
 		x = cx;
 		y = cy;
@@ -2343,53 +2346,6 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 		tty_add(tty, data, size);
 		tty_invalidate(tty);
 		free(data);
-	}
-}
-
-/*
- * Pass a kitty APC sequence directly to all attached kitty-capable clients
- * showing the given pane.  The outer terminal's cursor is first moved to
- * the pane-relative position (cx, cy) so that images placed at "current
- * cursor" land in the right spot.  Pass cx=cy=UINT_MAX to skip cursor
- * positioning (e.g. for delete commands that don't depend on position).
- */
-void
-tty_kitty_passthrough(struct window_pane *wp, const char *data, size_t len,
-    u_int cx, u_int cy)
-{
-	struct client	*c;
-	struct tty	*tty;
-	u_int		 x, y;
-
-	TAILQ_FOREACH(c, &clients, entry) {
-		if (c->session == NULL || c->tty.term == NULL)
-			continue;
-		if (c->flags & CLIENT_SUSPENDED)
-			continue;
-		if (c->tty.flags & TTY_FREEZE)
-			continue;
-		tty = &c->tty;
-		if (!tty_has_kitty(tty))
-			continue;
-		if (c->session->curw->window != wp->window)
-			continue;
-		if (!window_pane_visible(wp))
-			continue;
-
-		/* Position cursor at the correct screen location. */
-		if (cx != UINT_MAX && cy != UINT_MAX) {
-			x = wp->xoff + cx;
-			y = wp->yoff + cy;
-			if (status_at_line(c) == 0)
-				y += status_line_size(c);
-			tty_region_off(tty);
-			tty_margin_off(tty);
-			tty_cursor(tty, x, y);
-		}
-
-		tty->flags |= TTY_NOBLOCK;
-		tty_add(tty, data, len);
-		tty_invalidate(tty);
 	}
 }
 

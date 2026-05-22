@@ -2779,8 +2779,6 @@ void	tty_cmd_sixelimage(struct tty *, const struct tty_ctx *);
 void	tty_cmd_kittyimage(struct tty *, const struct tty_ctx *);
 void	tty_kitty_delete_owned(struct tty *);
 void	tty_kitty_delete_owned_pane(struct window_pane *);
-void	tty_kitty_passthrough(struct window_pane *, const char *, size_t,
-	    u_int, u_int);
 #endif
 
 void	tty_cmd_syncstart(struct tty *, const struct tty_ctx *);
@@ -3948,6 +3946,7 @@ int		 kitty_is_continuation(struct kitty_image *);
 int		 kitty_append(struct kitty_image *, struct kitty_image *, size_t);
 char		*kitty_print(struct kitty_image *, size_t *);
 char		*kitty_print_quiet(struct kitty_image *, size_t *);
+char		*kitty_print_upload(struct kitty_image *, size_t *);
 char		*kitty_print_redraw(struct kitty_image *, size_t *);
 char		*kitty_print_clipped(struct kitty_image *, u_int, u_int, u_int,
 		     u_int, size_t *);

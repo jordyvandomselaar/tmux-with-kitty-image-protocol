@@ -2796,7 +2796,7 @@ input_reply_kitty_error(struct input_ctx *ictx, struct kitty_image *ki,
 }
 
 static int
-input_kitty_has_capable_client(void)
+input_kitty_has_render_client(struct window_pane *wp)
 {
 	struct client	*c;
 
@@ -2805,7 +2805,14 @@ input_kitty_has_capable_client(void)
 			continue;
 		if (c->flags & CLIENT_SUSPENDED)
 			continue;
+		if (c->tty.flags & TTY_FREEZE)
+			continue;
 		if (~c->tty.term->flags & TERM_KITTY)
+			continue;
+		if (c->session->curw == NULL ||
+		    c->session->curw->window != wp->window)
+			continue;
+		if (!window_pane_visible(wp))
 			continue;
 		return (1);
 	}
@@ -2901,7 +2908,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		if (kitty_get_medium(ki) != 'd') {
 			input_reply_kitty_error(ictx, ki,
 			    "EINVAL:unsupported transmission medium");
-		} else if (!input_kitty_has_capable_client()) {
+		} else if (!input_kitty_has_render_client(wp)) {
 			input_reply_kitty_error(ictx, ki,
 			    "ENOSYS:kitty graphics unavailable");
 		} else

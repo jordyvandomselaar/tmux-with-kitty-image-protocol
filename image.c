@@ -27,10 +27,14 @@
 static struct images	all_images = TAILQ_HEAD_INITIALIZER(all_images);
 static u_int		all_images_count;
 #define MAX_IMAGE_COUNT 20
-#define MAX_KITTY_IMAGE_BYTES ((size_t)MAX_IMAGE_COUNT * INPUT_BUF_DEFAULT_SIZE)
+#ifdef ENABLE_KITTY_IMAGES
 #define MAX_TOTAL_IMAGE_COUNT (MAX_IMAGE_COUNT * MAX_IMAGE_COUNT)
+#define MAX_KITTY_IMAGE_BYTES ((size_t)MAX_IMAGE_COUNT * INPUT_BUF_DEFAULT_SIZE)
 #define MAX_KITTY_TOTAL_IMAGE_BYTES \
 	((size_t)MAX_TOTAL_IMAGE_COUNT * INPUT_BUF_DEFAULT_SIZE)
+#else
+#define MAX_TOTAL_IMAGE_COUNT MAX_IMAGE_COUNT
+#endif
 
 #ifdef ENABLE_KITTY_IMAGES
 static u_int		next_kitty_public_image_id = 0x80000000U;
@@ -294,6 +298,18 @@ image_free_oldest(void)
 		return (0);
 	image_free(TAILQ_FIRST(&all_images));
 	return (1);
+}
+
+static void
+image_kitty_hide(struct image *im)
+{
+	if (im->hidden)
+		return;
+	image_redraw_if_visible(im);
+	if (++kitty_images_generation == 0)
+		kitty_images_generation = 1;
+	kitty_set_terminal_placement_id(im->data.kitty, 0);
+	im->hidden = 1;
 }
 
 static size_t
@@ -883,6 +899,19 @@ image_kitty_scroll_down(struct screen *s, u_int lines)
 }
 #endif
 
+static void
+image_free_obscured(struct image *im)
+{
+#ifdef ENABLE_KITTY_IMAGES
+	if (im->type == IMAGE_KITTY &&
+	    kitty_get_action(im->data.kitty) == 'T') {
+		image_kitty_hide(im);
+		return;
+	}
+#endif
+	image_free(im);
+}
+
 int
 image_check_line(struct screen *s, u_int py, u_int ny)
 {
@@ -892,12 +921,10 @@ image_check_line(struct screen *s, u_int py, u_int ny)
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
 		if (im->hidden)
 			continue;
-		if (im->type == IMAGE_KITTY)
-			continue;
 		in = (py + ny > im->py && py < im->py + im->sy);
 		image_log(im, __func__, "py=%u, ny=%u, in=%d", py, ny, in);
 		if (in) {
-			image_free(im);
+			image_free_obscured(im);
 			redraw = 1;
 		}
 	}
@@ -913,15 +940,13 @@ image_check_area(struct screen *s, u_int px, u_int py, u_int nx, u_int ny)
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
 		if (im->hidden)
 			continue;
-		if (im->type == IMAGE_KITTY)
-			continue;
 		in = (py < im->py + im->sy &&
 		    py + ny > im->py &&
 		    px < im->px + im->sx &&
 		    px + nx > im->px);
 		image_log(im, __func__, "py=%u, ny=%u, in=%d", py, ny, in);
 		if (in) {
-			image_free(im);
+			image_free_obscured(im);
 			redraw = 1;
 		}
 	}

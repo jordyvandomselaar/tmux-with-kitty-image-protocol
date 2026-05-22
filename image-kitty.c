@@ -1188,6 +1188,25 @@ kitty_print_quiet(struct kitty_image *ki, size_t *outlen)
 }
 
 char *
+kitty_print_upload(struct kitty_image *ki, size_t *outlen)
+{
+	struct kitty_control_override	 overrides[5];
+
+	overrides[0].key = 'a';
+	overrides[0].value = "t";
+	overrides[1].key = 'p';
+	overrides[1].value = NULL;
+	overrides[2].key = 'c';
+	overrides[2].value = NULL;
+	overrides[3].key = 'r';
+	overrides[3].value = NULL;
+	overrides[4].key = 'C';
+	overrides[4].value = NULL;
+	return (kitty_print_with_overrides(ki, outlen,
+	    KITTY_QUIET_SUPPRESS_RESPONSES, overrides, nitems(overrides)));
+}
+
+char *
 kitty_print_redraw(struct kitty_image *ki, size_t *outlen)
 {
 	struct kitty_control_override	 overrides[1];

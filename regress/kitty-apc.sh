@@ -118,6 +118,14 @@ grep -q 'second-place' $TMP || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,q=1,i=85,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\\033[Hcover\033_Ga=d,q=1,d=a\033\\\\\033_Ga=p,q=1,i=85,c=1,r=1\033\\\\after-overwrite\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+grep -q 'after-overwrite' $TMP || exit 1
+
+kill_server
+$TMUX -f$CONF new -d \
     "stty raw -echo min 0 time 10; printf '\033_Ga=t,I=7,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
 sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1

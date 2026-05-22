@@ -54,6 +54,20 @@ sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
 tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
 
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=q,q=1,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=64 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' && exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=q,q=2,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=64 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
+
 PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
 ZLIB_RGB_1X1='eJxjYGAAAAADAAE='
 $TMUX kill-server 2>/dev/null
@@ -96,6 +110,21 @@ tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' || exit 1
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=t,q=2,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' && exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=T,i=11,p=22,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q \
+    '1b 5f 47 69 3d 31 31 2c 70 3d 32 32 3b 4f 4b' || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
     "printf '\033_Ga=T,t=f,f=100,s=1,v=1,r=1;L3RtcC9pbWc=\033\\\\after-file\\n'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
@@ -110,14 +139,21 @@ $TMUX capturep -pS0 >$TMP || exit 1
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d \
-    "printf '\033_Ga=T,t=d,f=24,s=1,v=1,m=1;AA\033\\\\\033_Gm=0;AA\033\\\\after-chunk\\n'; sleep 1"
+    "printf '\033_Ga=T,t=d,f=24,s=2,v=1,c=2,r=1,m=1;AAAA\033\\\\\033_Gm=0;AAAA\033\\\\after-chunk\\n'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-chunk/ { print NR; exit }' $TMP)" = 2 ] || exit 1
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d \
-    "printf '\033_Ga=T,t=d,f=24,s=1,v=1,m=1;AA\033\\\\\033_Gbad\033\\\\\033_Gm=0;AA\033\\\\after-abort\\n'; sleep 1"
+    "printf '\033_Ga=T,t=d,f=24,s=1,v=1,m=1;AA\033\\\\\033_Gm=0;AA\033\\\\after-bad-chunk\\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-bad-chunk/ { print NR; exit }' $TMP)" = 1 ] || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,t=d,f=24,s=2,v=1,m=1;AAAA\033\\\\\033_Gbad\033\\\\\033_Gm=0;AAAA\033\\\\after-abort\\n'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-abort/ { print NR; exit }' $TMP)" = 1 ] || exit 1

@@ -624,7 +624,7 @@ kitty_has_more(struct kitty_image *ki)
 int
 kitty_is_incomplete(struct kitty_image *ki)
 {
-	return (ki->has_more && ki->more != 0);
+	return (ki->has_more && ki->more != 0 && ki->encodedlen % 4 == 0);
 }
 
 int
@@ -840,6 +840,8 @@ kitty_append(struct kitty_image *ki, struct kitty_image *chunk, size_t limit)
 	size_t	 encodedlen;
 
 	if (ki == NULL || chunk == NULL || !chunk->has_more)
+		return (-1);
+	if (chunk->more != 0 && chunk->encodedlen % 4 != 0)
 		return (-1);
 	if (ki->encodedlen > limit || chunk->encodedlen > limit ||
 	    ki->encodedlen + chunk->encodedlen > limit)

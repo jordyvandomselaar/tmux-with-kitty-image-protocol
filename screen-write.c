@@ -1512,10 +1512,7 @@ screen_write_linefeed(struct screen_write_ctx *ctx, int wrapped, u_int bg)
 
 	if (s->cy == s->rlower) {
 #ifdef ENABLE_IMAGES
-		if (rlower == screen_size_y(s) - 1)
-			redraw = image_scroll_up(s, 1);
-		else
-			redraw = image_check_line(s, rupper, rlower - rupper);
+		redraw = image_scroll_up_region(s, 1, rupper, rlower);
 		if (redraw && ctx->wp != NULL)
 			ctx->wp->flags |= PANE_REDRAW;
 #endif
@@ -1545,7 +1542,8 @@ screen_write_scrollup(struct screen_write_ctx *ctx, u_int lines, u_int bg)
 	}
 
 #ifdef ENABLE_IMAGES
-	if (image_scroll_up(s, lines) && ctx->wp != NULL)
+	if (image_scroll_up_region(s, lines, s->rupper, s->rlower) &&
+	    ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 

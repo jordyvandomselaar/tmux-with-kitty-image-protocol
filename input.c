@@ -2771,7 +2771,7 @@ input_reply_kitty(struct input_ctx *ictx, struct kitty_image *ki,
 static void
 input_reply_kitty_ok(struct input_ctx *ictx, struct kitty_image *ki)
 {
-	if (kitty_get_quiet(ki) != 0)
+	if (kitty_get_quiet(ki) == 1)
 		return;
 	input_reply_kitty(ictx, ki, "OK");
 }

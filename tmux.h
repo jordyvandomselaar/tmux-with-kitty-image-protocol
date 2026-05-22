@@ -3878,6 +3878,7 @@ int		 image_kitty_scroll_down(struct screen *, u_int);
 #endif
 int		 image_check_line(struct screen *, u_int, u_int);
 int		 image_check_area(struct screen *, u_int, u_int, u_int, u_int);
+int		 image_scroll_up_region(struct screen *, u_int, u_int, u_int);
 int		 image_scroll_up(struct screen *, u_int);
 #ifdef ENABLE_KITTY_IMAGES
 int		 image_kitty_delete(struct screen *, struct kitty_image *);

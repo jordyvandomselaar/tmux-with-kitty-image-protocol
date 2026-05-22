@@ -726,49 +726,67 @@ image_check_area(struct screen *s, u_int px, u_int py, u_int nx, u_int ny)
 }
 
 int
-image_scroll_up(struct screen *s, u_int lines)
+image_scroll_up_region(struct screen *s, u_int lines, u_int top, u_int bottom)
 {
 	struct image		*im, *im1;
 	int			 redraw = 0;
+	uint64_t		 itop, ibottom, delete_end, region_end;
 #ifdef ENABLE_SIXEL
 	struct sixel_image	*new;
 	u_int			 sx;
 #endif
 #if defined(ENABLE_SIXEL) || defined(ENABLE_KITTY_IMAGES)
-	u_int			 sy;
+	u_int			 removed, sy;
 #endif
+
+	if (lines == 0 || top > bottom)
+		return (0);
+	if (lines > bottom + 1 - top)
+		lines = bottom + 1 - top;
+	delete_end = (uint64_t)top + lines;
+	region_end = (uint64_t)bottom + 1;
 
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
 		if (im->hidden)
 			continue;
-		if (im->py >= lines) {
-			image_log(im, __func__, "1, lines=%u", lines);
+		itop = im->py;
+		ibottom = (uint64_t)im->py + im->sy;
+		if (ibottom <= top || itop >= region_end)
+			continue;
+		image_log(im, __func__, "lines=%u, top=%u, bottom=%u", lines,
+		    top, bottom);
+		if (itop < top || ibottom > region_end) {
+			image_free(im);
+			redraw = 1;
+			continue;
+		}
+		if (itop >= delete_end) {
 			im->py -= lines;
 			redraw = 1;
 			continue;
 		}
-		if (im->py + im->sy <= lines) {
-			image_log(im, __func__, "2, lines=%u", lines);
+		if (ibottom <= delete_end) {
 			image_free(im);
 			redraw = 1;
 			continue;
 		}
 
 		/* Image is partially scrolled off - need to crop it */
+		sy = ibottom - delete_end;
+		removed = im->sy - sy;
 		switch (im->type) {
 #ifdef ENABLE_SIXEL
 		case IMAGE_SIXEL:
 			sx = im->sx;
-			sy = (im->py + im->sy) - lines;
-			image_log(im, __func__, "sixel, lines=%u, sy=%u",
-			    lines, sy);
+			image_log(im, __func__, "sixel, lines=%u, sy=%u", lines,
+			    sy);
 
-			new = sixel_scale(im->data.sixel, 0, 0, 0, im->sy - sy,
-			    sx, sy, 1);
+			new = sixel_scale(im->data.sixel, 0, 0, 0, removed, sx, sy,
+			    1);
 			sixel_free(im->data.sixel);
 			im->data.sixel = new;
 
-			im->py = 0;
+			im->py = top;
 			sixel_size_in_cells(im->data.sixel, &im->sx, &im->sy);
 
 			free(im->fallback);
@@ -778,9 +796,8 @@ image_scroll_up(struct screen *s, u_int lines)
 #endif
 #ifdef ENABLE_KITTY_IMAGES
 		case IMAGE_KITTY:
-			sy = (im->py + im->sy) - lines;
-			im->kitty_yoff += im->sy - sy;
-			im->py = 0;
+			im->kitty_yoff += removed;
+			im->py = top;
 			im->sy = sy;
 
 			free(im->fallback);
@@ -793,4 +810,12 @@ image_scroll_up(struct screen *s, u_int lines)
 		}
 	}
 	return (redraw);
+}
+
+int
+image_scroll_up(struct screen *s, u_int lines)
+{
+	if (screen_size_y(s) == 0)
+		return (0);
+	return (image_scroll_up_region(s, lines, 0, screen_size_y(s) - 1));
 }

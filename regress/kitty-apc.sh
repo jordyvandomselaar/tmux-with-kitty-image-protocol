@@ -24,8 +24,8 @@ kill_server
 printf 'set -g allow-set-title on\n' >$CONF
 
 $TMUX -f$CONF new -d 'sleep 1'
-case "$($TMUX display -p '#{image_support}')" in
-*kitty*) ;;
+case "$($TMUX display -p '#{kitty_support}')" in
+1) ;;
 *) [ -n "$REQUIRE_KITTY_IMAGES" ] && exit 1; exit 0 ;;
 esac
 kill_server
@@ -66,6 +66,15 @@ tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=q,q=3,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=64 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 4e 4f 53 59 53' && exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' && exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' && exit 1
+
+kill_server
+$TMUX -f$CONF new -d \
     "stty raw -echo min 0 time 10; printf '\033_Ga=q,q=1,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=64 2>/dev/null | od -An -tx1; sleep 1"
 sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
@@ -86,6 +95,14 @@ $TMUX -f$CONF new -d \
 sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
 tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' && exit 1
+
+kill_server
+$TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=q,q=3,t=d,f=1,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' && exit 1
 tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' && exit 1
 
 kill_server

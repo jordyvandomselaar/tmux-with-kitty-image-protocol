@@ -2666,18 +2666,14 @@ format_cb_version(__unused struct format_tree *ft)
 	return (xstrdup(getversion()));
 }
 
-/* Callback for image_support. */
+/* Callback for kitty_support. */
 static void *
-format_cb_image_support(__unused struct format_tree *ft)
+format_cb_kitty_support(__unused struct format_tree *ft)
 {
-#if defined(ENABLE_SIXEL) && defined(ENABLE_KITTY_IMAGES)
-	return (xstrdup("kitty,sixel"));
-#elif defined(ENABLE_SIXEL)
-	return (xstrdup("sixel"));
-#elif defined(ENABLE_KITTY_IMAGES)
-	return (xstrdup("kitty"));
+#ifdef ENABLE_KITTY_IMAGES
+	return (xstrdup("1"));
 #else
-	return (NULL);
+	return (xstrdup("0"));
 #endif
 }
 
@@ -3317,9 +3313,6 @@ static const struct format_table_entry format_table[] = {
 	{ "host_short", FORMAT_TABLE_STRING,
 	  format_cb_host_short
 	},
-	{ "image_support", FORMAT_TABLE_STRING,
-	  format_cb_image_support
-	},
 	{ "insert_flag", FORMAT_TABLE_STRING,
 	  format_cb_insert_flag
 	},
@@ -3328,6 +3321,9 @@ static const struct format_table_entry format_table[] = {
 	},
 	{ "keypad_flag", FORMAT_TABLE_STRING,
 	  format_cb_keypad_flag
+	},
+	{ "kitty_support", FORMAT_TABLE_STRING,
+	  format_cb_kitty_support
 	},
 	{ "last_window_index", FORMAT_TABLE_STRING,
 	  format_cb_last_window_index

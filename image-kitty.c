@@ -905,13 +905,13 @@ kitty_get_quiet(struct kitty_image *ki)
 int
 kitty_quiet_suppresses_ok(struct kitty_image *ki)
 {
-	return (ki->quiet == KITTY_QUIET_SUPPRESS_OK);
+	return ((ki->quiet & KITTY_QUIET_SUPPRESS_OK) != 0);
 }
 
 int
 kitty_quiet_suppresses_errors(struct kitty_image *ki)
 {
-	return (ki->quiet == KITTY_QUIET_SUPPRESS_FAILURES);
+	return ((ki->quiet & KITTY_QUIET_SUPPRESS_FAILURES) != 0);
 }
 
 int

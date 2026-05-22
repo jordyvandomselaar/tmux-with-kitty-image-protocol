@@ -924,7 +924,7 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 			if (!image_free_oldest_generic_from_screen(s))
 				break;
 		}
-		while (image_count_all() + 1 >= MAX_TOTAL_IMAGE_COUNT) {
+		while (image_count_all() + 1 >= MAX_IMAGE_COUNT) {
 			if (!image_free_oldest_generic())
 				break;
 		}

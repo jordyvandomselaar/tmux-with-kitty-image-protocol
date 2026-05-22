@@ -2551,10 +2551,8 @@ screen_write_kittyimage_scroll(struct screen_write_ctx *ctx,
 	rlower = s->rlower;
 	if (cy < rupper || cy > rlower)
 		return (y);
-	if (rlower == rupper)
-		return (y);
-	if (y > rlower - rupper)
-		y = rlower - rupper;
+	if (y > rlower - rupper + 1)
+		y = rlower - rupper + 1;
 
 	sy = rlower - cy + 1;
 	if (sy <= y) {

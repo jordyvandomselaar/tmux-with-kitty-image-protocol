@@ -334,6 +334,17 @@ grep -q '^two$' $TMP || exit 1
 [ "$(awk '/after-scroll/ { print NR; exit }' $TMP)" = 4 ] || exit 1
 
 kill_server
+$TMUX -f$CONF new -d -x 20 -y 4 \
+    "printf 'one\r\ntwo\r\nthree\r\nfour\033[H\033_Ga=T,q=1,t=d,f=24,s=1,v=1,c=1,r=4;AAAA\033\\\\after-full-scroll'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+[ "$(sed -n '1p' $TMP)" = "two" ] || exit 1
+[ "$(sed -n '2p' $TMP)" = "three" ] || exit 1
+[ "$(sed -n '3p' $TMP)" = "four" ] || exit 1
+[ "$(sed -n '4p' $TMP)" = "after-full-scroll" ] || exit 1
+
+kill_server
 $TMUX -f$CONF new -d -x 20 -y 5 \
     "printf '\033[1;1Htop\033[2;1Hr2\033[3;1Hr3\033[4;1Hr4\033[5;1Hbottom\033[2;4r\033[4;1H\033_Ga=T,q=1,i=88,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\after-region'; sleep 1"
 sleep 0.5

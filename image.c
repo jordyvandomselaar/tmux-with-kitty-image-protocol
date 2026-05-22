@@ -62,6 +62,26 @@ image_log(struct image *im, const char* from, const char* fmt, ...)
 	    im->px, im->py, s);
 }
 
+#ifdef ENABLE_KITTY_IMAGES
+static void
+image_redraw_if_visible(struct image *im)
+{
+	struct window_pane	*wp;
+
+	if (im->type != IMAGE_KITTY || im->hidden)
+		return;
+	if (im->s == NULL || im->images != &im->s->images)
+		return;
+
+	RB_FOREACH(wp, window_pane_tree, &all_window_panes) {
+		if (wp->screen == im->s) {
+			server_redraw_window(wp->window);
+			return;
+		}
+	}
+}
+#endif
+
 static void
 image_free(struct image *im)
 {
@@ -69,6 +89,7 @@ image_free(struct image *im)
 
 #ifdef ENABLE_KITTY_IMAGES
 	if (im->type == IMAGE_KITTY && !im->hidden) {
+		image_redraw_if_visible(im);
 		if (++kitty_images_generation == 0)
 			kitty_images_generation = 1;
 	}

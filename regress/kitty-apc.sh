@@ -76,7 +76,8 @@ sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
 tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
 
-PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
+PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
+BAD_PNG_HEADER='iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB'
 ZLIB_RGB_1X1='eJxjYGAAAAADAAE='
 kill_server
 $TMUX -f$CONF new -d \
@@ -84,6 +85,13 @@ $TMUX -f$CONF new -d \
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-png/ { print NR; exit }' $TMP)" = 2 ] || exit 1
+
+kill_server
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,t=d,f=100;$BAD_PNG_HEADER\033\\\\after-bad-png\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-bad-png/ { print NR; exit }' $TMP)" = 1 ] || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \
@@ -159,6 +167,16 @@ $TMUX -f$CONF new -d \
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-chunk/ { print NR; exit }' $TMP)" = 2 ] || exit 1
+
+kill_server
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,t=d,f=24,s=2,v=1,c=2,r=1;AAAA'; sleep 1; printf 'AAAA\033\\\\after-split\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'AAAA' $TMP && exit 1
+sleep 1.2
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-split/ { print NR; exit }' $TMP)" = 2 ] || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \

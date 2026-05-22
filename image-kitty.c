@@ -31,6 +31,8 @@
 #define KITTY_CHUNK_LIMIT 4096
 #define KITTY_INFLATE_LIMIT INPUT_BUF_DEFAULT_SIZE
 #define KITTY_PNG_HEADER_SIZE 24
+#define KITTY_PNG_SIGNATURE_SIZE 8
+#define KITTY_PNG_IHDR_SIZE 13
 #define KITTY_QUIET_SUPPRESS_RESPONSES 2
 #define KITTY_QUIET_UNCHANGED ((u_int)-1)
 
@@ -321,6 +323,99 @@ kitty_get_be32(const u_char *p)
 	    ((u_int)p[2] << 8) | p[3]);
 }
 
+static int
+kitty_png_bit_depth_valid(u_int bit_depth, u_int color_type)
+{
+	switch (color_type) {
+	case 0:
+		return (bit_depth == 1 || bit_depth == 2 || bit_depth == 4 ||
+		    bit_depth == 8 || bit_depth == 16);
+	case 2:
+		return (bit_depth == 8 || bit_depth == 16);
+	case 3:
+		return (bit_depth == 1 || bit_depth == 2 || bit_depth == 4 ||
+		    bit_depth == 8);
+	case 4:
+		return (bit_depth == 8 || bit_depth == 16);
+	case 6:
+		return (bit_depth == 8 || bit_depth == 16);
+	}
+	return (0);
+}
+
+static u_int
+kitty_png_samples_per_pixel(u_int color_type)
+{
+	switch (color_type) {
+	case 2:
+		return (3);
+	case 4:
+		return (2);
+	case 6:
+		return (4);
+	default:
+		return (1);
+	}
+}
+
+static int
+kitty_png_expected_size(u_int width, u_int height, u_int bit_depth,
+    u_int color_type, uint64_t *expected)
+{
+	uint64_t	 samples, row_bits, row_bytes;
+
+	samples = kitty_png_samples_per_pixel(color_type);
+	if (width == 0 || height == 0)
+		return (0);
+	if (width > UINT64_MAX / samples / bit_depth)
+		return (0);
+	row_bits = (uint64_t)width * samples * bit_depth;
+	if (row_bits > UINT64_MAX - 7)
+		return (0);
+	row_bytes = (row_bits + 7) / 8 + 1;
+	if (row_bytes > UINT64_MAX / height)
+		return (0);
+	*expected = row_bytes * height;
+	return (1);
+}
+
+static int
+kitty_png_validate_idat(const u_char *idat, size_t idatlen,
+    uint64_t expected, int check_expected)
+{
+	u_char		 out[4096];
+	z_stream	 zs;
+	size_t		 total = 0;
+	int		 ret;
+
+	if (idatlen == 0 || idatlen > UINT_MAX)
+		return (0);
+	if (check_expected && expected > SIZE_MAX)
+		return (0);
+
+	memset(&zs, 0, sizeof zs);
+	zs.next_in = (Bytef *)idat;
+	zs.avail_in = (uInt)idatlen;
+	if (inflateInit(&zs) != Z_OK)
+		return (0);
+
+	do {
+		zs.next_out = out;
+		zs.avail_out = sizeof out;
+		ret = inflate(&zs, Z_NO_FLUSH);
+		total += sizeof out - zs.avail_out;
+		if (check_expected && total > expected) {
+			inflateEnd(&zs);
+			return (0);
+		}
+	} while (ret == Z_OK);
+
+	inflateEnd(&zs);
+	if (ret != Z_STREAM_END || zs.avail_in != 0)
+		return (0);
+	return (!check_expected || total == expected);
+}
+
 static void
 kitty_update_png_size(struct kitty_image *ki)
 {
@@ -348,17 +443,107 @@ kitty_update_png_size(struct kitty_image *ki)
 static int
 kitty_validate_png_payload(struct kitty_image *ki, u_char *out, size_t outlen)
 {
-	if (outlen < KITTY_PNG_HEADER_SIZE)
+	u_char		*idat = NULL, *new_idat;
+	const u_char	*type, *data;
+	size_t		 pos, length, idatlen = 0;
+	uLong		 crc;
+	uint64_t	 expected = 0;
+	u_int		 width = 0, height = 0, bit_depth = 0, color_type = 0;
+	u_int		 compression = 0, filter = 0, interlace = 0, stored_crc;
+	int		 seen_ihdr = 0, seen_idat = 0, seen_iend = 0;
+	int		 seen_plte = 0, after_idat = 0, valid = 0;
+
+	if (outlen < KITTY_PNG_SIGNATURE_SIZE + 12)
 		return (0);
-	if (memcmp(out, "\211PNG\r\n\032\n", 8) != 0)
+	if (memcmp(out, "\211PNG\r\n\032\n", KITTY_PNG_SIGNATURE_SIZE) != 0)
 		return (0);
-	if (memcmp(out + 12, "IHDR", 4) != 0)
-		return (0);
+
+	pos = KITTY_PNG_SIGNATURE_SIZE;
+	while (pos + 12 <= outlen) {
+		length = kitty_get_be32(out + pos);
+		if (length > outlen - pos - 12)
+			goto out;
+		type = out + pos + 4;
+		data = out + pos + 8;
+
+		crc = crc32(0L, Z_NULL, 0);
+		crc = crc32(crc, type, 4);
+		if (length != 0)
+			crc = crc32(crc, data, (uInt)length);
+		stored_crc = kitty_get_be32(data + length);
+		if ((u_int)crc != stored_crc)
+			goto out;
+
+		if (!seen_ihdr) {
+			if (memcmp(type, "IHDR", 4) != 0 ||
+			    length != KITTY_PNG_IHDR_SIZE)
+				goto out;
+			seen_ihdr = 1;
+			width = kitty_get_be32(data);
+			height = kitty_get_be32(data + 4);
+			bit_depth = data[8];
+			color_type = data[9];
+			compression = data[10];
+			filter = data[11];
+			interlace = data[12];
+			if (width == 0 || height == 0 || compression != 0 ||
+			    filter != 0 || interlace > 1)
+				goto out;
+			if (!kitty_png_bit_depth_valid(bit_depth, color_type))
+				goto out;
+			pos += length + 12;
+			continue;
+		}
+
+		if (memcmp(type, "IHDR", 4) == 0)
+			goto out;
+		if (memcmp(type, "PLTE", 4) == 0) {
+			if (seen_idat || length == 0 || length % 3 != 0)
+				goto out;
+			seen_plte = 1;
+		} else if (memcmp(type, "IDAT", 4) == 0) {
+			if (length == 0 || after_idat ||
+			    idatlen > SIZE_MAX - length)
+				goto out;
+			new_idat = xrealloc(idat, idatlen + length);
+			idat = new_idat;
+			memcpy(idat + idatlen, data, length);
+			idatlen += length;
+			seen_idat = 1;
+		} else if (memcmp(type, "IEND", 4) == 0) {
+			if (length != 0 || !seen_idat || pos + 12 != outlen)
+				goto out;
+			seen_iend = 1;
+			break;
+		} else {
+			if (seen_idat)
+				after_idat = 1;
+			if (type[0] >= 'A' && type[0] <= 'Z')
+				goto out;
+		}
+
+		pos += length + 12;
+	}
+
+	if (!seen_ihdr || !seen_idat || !seen_iend)
+		goto out;
+	if (color_type == 3 && !seen_plte)
+		goto out;
+	if (interlace == 0 && !kitty_png_expected_size(width, height, bit_depth,
+	    color_type, &expected))
+		goto out;
+	if (!kitty_png_validate_idat(idat, idatlen, expected, interlace == 0))
+		goto out;
+
 	if (ki->pixel_w == 0)
-		ki->pixel_w = kitty_get_be32(out + 16);
+		ki->pixel_w = width;
 	if (ki->pixel_h == 0)
-		ki->pixel_h = kitty_get_be32(out + 20);
-	return (ki->pixel_w != 0 && ki->pixel_h != 0);
+		ki->pixel_h = height;
+	valid = (ki->pixel_w != 0 && ki->pixel_h != 0);
+
+out:
+	free(idat);
+	return (valid);
 }
 
 static int

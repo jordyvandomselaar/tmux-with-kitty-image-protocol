@@ -308,7 +308,8 @@ image_match_kitty(struct image *im, struct kitty_image *ki, char what)
 	x = kitty_get_delete_x(ki);
 	y = kitty_get_delete_y(ki);
 
-	if (im->hidden && strchr("aincpqrxyz", what) != NULL)
+	if (im->hidden &&
+	    (what == '\0' || strchr("aincpqrxyz", what) != NULL))
 		return (0);
 
 	switch (what) {
@@ -617,12 +618,12 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 #endif
 #ifdef ENABLE_KITTY_IMAGES
 	case IMAGE_KITTY:
+		image_prepare_kitty(s, data, hidden);
 		if (!image_kitty_make_room(data)) {
 			free(im);
 			return (NULL);
 		}
 		image_kitty_replace(s, data);
-		image_prepare_kitty(s, data, hidden);
 		im->data.kitty = data;
 		if (!hidden)
 			kitty_size_in_cells(im->data.kitty, &im->sx, &im->sy);

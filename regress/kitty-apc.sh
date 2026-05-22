@@ -255,6 +255,21 @@ $TMUX capturep -pS0 >$TMP || exit 1
 grep -q 'EINVAL' $TMP && exit 1
 grep -q 'after-reuse' $TMP || exit 1
 
+{
+	printf 'one\r\ntwo\r\nthree\r\nfour'
+	printf '\033_Ga=t,q=1,i=93,t=d,f=24,s=1,v=64;'
+	head -c 256 /dev/zero | tr '\000' A
+	printf '\033\\\033[4;1H\033_Ga=p,q=1,i=93\033\\after-place'
+} >$APC
+kill_server
+$TMUX -f$CONF new -d -x 20 -y 4 "cat '$APC'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+[ "$(sed -n '1p' $TMP)" = "three" ] || exit 1
+[ "$(sed -n '2p' $TMP)" = "four" ] || exit 1
+[ "$(sed -n '4p' $TMP)" = "after-place" ] || exit 1
+
 kill_server
 $TMUX -f$CONF new -d \
     "stty raw -echo min 0 time 10; printf '\033_Ga=t,I=7,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"

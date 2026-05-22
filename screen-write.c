@@ -2612,6 +2612,8 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 
 	if (ki == NULL)
 		return (0);
+	if (!image_prepare_kitty_display(s, ki))
+		return (0);
 	sy = screen_write_kittyimage_scroll(ctx, ki);
 
 	/* Store the image in the cache. */

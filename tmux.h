@@ -3887,6 +3887,8 @@ struct image	*image_store_kitty(struct screen *, struct kitty_image *,
     struct image **);
 struct image	*image_store_kitty_upload(struct screen *,
 		     struct kitty_image *);
+int		 image_prepare_kitty_display(struct screen *,
+		     struct kitty_image *);
 int		 image_kitty_has_source(struct screen *, struct kitty_image *);
 u_int		 image_kitty_generation(void);
 int		 image_kitty_insert_lines(struct screen *, u_int, u_int, u_int);

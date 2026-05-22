@@ -488,6 +488,20 @@ image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
 	}
 }
 
+int
+image_prepare_kitty_display(struct screen *s, struct kitty_image *ki)
+{
+	char	 action;
+
+	if (s == NULL || ki == NULL)
+		return (0);
+	action = kitty_get_action(ki);
+	image_prepare_kitty(s, ki, 0);
+	if (action == 'p' && kitty_get_terminal_image_id(ki) == 0)
+		return (0);
+	return (1);
+}
+
 static int
 image_kitty_make_room_count(struct screen *s, enum image_kitty_limit_type type,
     u_int screen_limit, u_int total_limit)

@@ -2822,6 +2822,18 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		ictx->kitty_pending = NULL;
 		return;
 	}
+	if (kitty_exceeds_chunk_limit(ki)) {
+		if (ictx->kitty_pending != NULL)
+			input_reply_kitty_error(ictx, ictx->kitty_pending,
+			    "EINVAL:invalid image data");
+		else
+			input_reply_kitty_error(ictx, ki,
+			    "EINVAL:invalid image data");
+		kitty_free(ictx->kitty_pending);
+		ictx->kitty_pending = NULL;
+		kitty_free(ki);
+		return;
+	}
 
 	if (ictx->kitty_pending != NULL) {
 		if (!kitty_is_continuation(ki)) {

@@ -3905,6 +3905,9 @@ struct screen	*sixel_to_screen(struct sixel_image *);
 struct kitty_image *kitty_parse(const u_char *, size_t, u_int, u_int);
 void		 kitty_free(struct kitty_image *);
 size_t		 kitty_size_in_bytes(struct kitty_image *);
+int		 kitty_exceeds_chunk_limit(struct kitty_image *);
+void		 kitty_copy_source_metadata(struct kitty_image *,
+		     struct kitty_image *);
 void		 kitty_size_in_cells(struct kitty_image *, u_int *, u_int *);
 int		 kitty_has_height(struct kitty_image *);
 int		 kitty_validate_payload(struct kitty_image *);

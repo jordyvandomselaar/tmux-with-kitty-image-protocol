@@ -262,6 +262,7 @@ image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
 				image_id =
 				    kitty_get_terminal_image_id(upload->data.kitty);
 				kitty_set_terminal_image_id(ki, image_id);
+				kitty_copy_source_metadata(ki, upload->data.kitty);
 			}
 		} else if (action == 'T' || action == 't')
 			kitty_set_terminal_image_id(ki,

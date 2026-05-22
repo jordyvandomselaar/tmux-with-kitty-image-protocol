@@ -455,6 +455,35 @@ kitty_size_in_bytes(struct kitty_image *ki)
 	return (sizeof *ki + ki->encodedlen + ki->ctrllen);
 }
 
+int
+kitty_exceeds_chunk_limit(struct kitty_image *ki)
+{
+	return (ki != NULL && ki->encodedlen > KITTY_CHUNK_LIMIT);
+}
+
+void
+kitty_copy_source_metadata(struct kitty_image *dst, struct kitty_image *src)
+{
+	if (dst == NULL || src == NULL)
+		return;
+
+	kitty_update_png_size(src);
+	if (dst->format == 0)
+		dst->format = src->format;
+	if (dst->pixel_w == 0)
+		dst->pixel_w = src->pixel_w;
+	if (dst->pixel_h == 0)
+		dst->pixel_h = src->pixel_h;
+	if (dst->delete_x == 0)
+		dst->delete_x = src->delete_x;
+	if (dst->delete_y == 0)
+		dst->delete_y = src->delete_y;
+	if (dst->source_w == 0)
+		dst->source_w = src->source_w;
+	if (dst->source_h == 0)
+		dst->source_h = src->source_h;
+}
+
 /*
  * Get the size in cells of a kitty image. If cols/rows are 0 (auto),
  * calculate from pixel dimensions. Returns size via sx/sy pointers.
@@ -848,6 +877,8 @@ kitty_append(struct kitty_image *ki, struct kitty_image *chunk, size_t limit)
 	size_t	 encodedlen;
 
 	if (ki == NULL || chunk == NULL || !chunk->has_more)
+		return (-1);
+	if (kitty_exceeds_chunk_limit(chunk))
 		return (-1);
 	if (chunk->more != 0 && chunk->encodedlen % 4 != 0)
 		return (-1);

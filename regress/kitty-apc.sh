@@ -238,6 +238,15 @@ $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-stay/ { print NR; exit }' $TMP)" = 1 ] || exit 1
 
 kill_server
+$TMUX -f$CONF new -d -x 20 -y 4 \
+    "printf 'one\r\ntwo\r\n\033_Ga=T,q=1,t=d,f=24,s=1,v=1,c=1,r=2;AAAA\033\\\\after-scroll'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q '^one' $TMP && exit 1
+grep -q '^two$' $TMP || exit 1
+[ "$(awk '/after-scroll/ { print NR; exit }' $TMP)" = 4 ] || exit 1
+
+kill_server
 $TMUX -f$CONF new -d \
     "printf '\033_Ga=T,t=d,f=24,s=2,v=1,c=2,r=1,m=1;AAAA\033\\\\\033_Gm=0;AAAA\033\\\\after-chunk\\n'; sleep 1"
 sleep 0.5

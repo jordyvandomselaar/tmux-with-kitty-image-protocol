@@ -13,12 +13,25 @@ TMUX="$TEST_TMUX -Ltest"
 CONF=$(mktemp)
 TMP=$(mktemp)
 APC=$(mktemp)
+OUT=$(mktemp)
 
 kill_server() {
 	$TMUX kill-server 2>/dev/null || true
 }
 
-trap 'kill_server; rm -f "$CONF" "$TMP" "$APC"' 0 1 15
+script_client() {
+	cmd="$TMUX -f$CONF new -x 20 -y 5 \"$1\""
+
+	: >$OUT
+	TERM=xterm-256color script -q "$OUT" sh -c "$cmd" \
+	    >/dev/null 2>&1 && return 0
+	: >$OUT
+	TERM=xterm-256color script -q -c "$cmd" "$OUT" \
+	    >/dev/null 2>&1 && return 0
+	return 1
+}
+
+trap 'kill_server; rm -f "$CONF" "$TMP" "$APC" "$OUT"' 0 1 15
 
 kill_server
 printf 'set -g allow-set-title on\n' >$CONF
@@ -29,6 +42,22 @@ case "$($TMUX display -p '#{kitty_support}')" in
 *) [ -n "$REQUIRE_KITTY_IMAGES" ] && exit 1; exit 0 ;;
 esac
 kill_server
+
+if command -v script >/dev/null 2>&1; then
+	printf 'set -g allow-set-title on\nset -as terminal-features "*:kitty"\nset -g status off\n' >$CONF
+	script_client "printf '\033_Ga=T,q=1,i=94,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\'; sleep 0.5" || exit 1
+	kill_server
+	grep -aq 'a=t,t=d,f=24,s=1,v=1,q=1,i=' $OUT || exit 1
+	grep -aq 'a=p,c=1,r=1,q=1,i=' $OUT || exit 1
+	grep -aq 'KITTY IMAGE' $OUT && exit 1
+
+	printf 'set -g allow-set-title on\nset -g status off\n' >$CONF
+	script_client "printf '\033_Ga=T,q=1,i=95,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\'; sleep 0.5" || exit 1
+	kill_server
+	grep -aq 'KITTY IMAGE (1x1)' $OUT || exit 1
+	grep -aq 'a=t,t=d,f=24,s=1,v=1,q=1,i=' $OUT && exit 1
+	printf 'set -g allow-set-title on\n' >$CONF
+fi
 
 test_apc() {
 	kill_server
@@ -278,6 +307,18 @@ grep -q 'EINVAL' $TMP && exit 1
 [ "$(sed -n '5p' $TMP)" = "after-insert-line" ] || exit 1
 
 kill_server
+$TMUX -f$CONF new -d -x 20 -y 5 \
+    "printf '\033[1;1Htop\033[2;1Hr2\033[3;1Hr3\033[4;1Hr4\033[5;1Hbottom\033[2;1H\033_Ga=T,q=1,i=90,t=d,f=24,s=1,v=3,c=1,r=3,C=1;AAAAAAAAAAAA\033\\\\\033[2;4r\033[2;1H\033[M\033[5;1H\033_Ga=p,q=1,i=90,c=1,r=1,C=1\033\\\\after-delete-line'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+[ "$(sed -n '1p' $TMP)" = "top" ] || exit 1
+[ "$(sed -n '2p' $TMP)" = "r3" ] || exit 1
+[ "$(sed -n '3p' $TMP)" = "r4" ] || exit 1
+[ "$(sed -n '4p' $TMP)" = "" ] || exit 1
+[ "$(sed -n '5p' $TMP)" = "after-delete-line" ] || exit 1
+
+kill_server
 $TMUX -f$CONF new -d \
     "printf '\033_Ga=T,t=d,f=24,s=2,v=1,c=2,r=1,m=1;AAAA\033\\\\\033_Gm=0;AAAA\033\\\\after-chunk\\n'; sleep 1"
 sleep 0.5
@@ -359,6 +400,15 @@ sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 grep -q 'EINVAL:unknown image id' $TMP || exit 1
 grep -q 'after-delete-lower' $TMP || exit 1
+
+kill_server
+$TMUX -f$CONF new -d -x 20 -y 5 \
+    "printf '\033_Ga=t,q=1,i=91,t=d,f=24,s=1,v=1;AAAA\033\\\\main\n\033[?1049h\033_Ga=T,q=1,i=92,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\alt\n\033[?1049l\033_Ga=p,q=1,i=91,c=1,r=1\033\\\\after-alternate\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+grep -q '^main$' $TMP || exit 1
+grep -q 'after-alternate' $TMP || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \

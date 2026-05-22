@@ -461,6 +461,12 @@ kitty_get_image_id(struct kitty_image *ki)
 	return (ki->image_id);
 }
 
+void
+kitty_set_image_id(struct kitty_image *ki, u_int image_id)
+{
+	ki->image_id = image_id;
+}
+
 u_int
 kitty_get_rows(struct kitty_image *ki)
 {

@@ -170,6 +170,7 @@ screen_free(struct screen *s)
 
 #ifdef ENABLE_IMAGES
 	image_free_all(s);
+	image_free_all_saved(s);
 #endif
 }
 

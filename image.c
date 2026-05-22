@@ -28,6 +28,7 @@ static u_int		all_images_count;
 #define MAX_IMAGE_COUNT 20
 
 #ifdef ENABLE_KITTY_IMAGES
+static u_int		next_kitty_public_image_id = 0x80000000U;
 static u_int		next_kitty_image_id = 0x80000000U;
 static u_int		next_kitty_placement_id = 0x80000000U;
 static u_int		kitty_images_generation;
@@ -142,6 +143,45 @@ image_find_kitty_source(struct screen *s, struct kitty_image *ki)
 	return (NULL);
 }
 
+static int
+image_kitty_image_id_in_use1(struct images *images, u_int image_id)
+{
+	struct image		*im;
+	struct kitty_image	*existing;
+
+	TAILQ_FOREACH(im, images, entry) {
+		if (im->type != IMAGE_KITTY)
+			continue;
+		existing = im->data.kitty;
+		if (kitty_get_image_id(existing) == image_id)
+			return (1);
+	}
+	return (0);
+}
+
+static int
+image_kitty_image_id_in_use(struct screen *s, u_int image_id)
+{
+	if (image_id == 0)
+		return (1);
+	return (image_kitty_image_id_in_use1(&s->images, image_id) ||
+	    image_kitty_image_id_in_use1(&s->saved_images, image_id));
+}
+
+static void
+image_assign_kitty_public_id(struct screen *s, struct kitty_image *ki)
+{
+	u_int	id;
+
+	if (kitty_get_image_id(ki) != 0 || kitty_get_image_num(ki) == 0)
+		return;
+
+	do {
+		id = image_next_kitty_id(&next_kitty_public_image_id);
+	} while (image_kitty_image_id_in_use(s, id));
+	kitty_set_image_id(ki, id);
+}
+
 int
 image_kitty_has_source(struct screen *s, struct kitty_image *ki)
 {
@@ -201,6 +241,9 @@ image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
 	u_int		 image_id;
 
 	action = kitty_get_action(ki);
+	if (action == 'T' || action == 't')
+		image_assign_kitty_public_id(s, ki);
+
 	if (kitty_get_terminal_image_id(ki) == 0) {
 		if (action == 'p') {
 			upload = image_find_kitty_source(s, ki);
@@ -533,6 +576,8 @@ image_check_line(struct screen *s, u_int py, u_int ny)
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
 		if (im->hidden)
 			continue;
+		if (im->type == IMAGE_KITTY)
+			continue;
 		in = (py + ny > im->py && py < im->py + im->sy);
 		image_log(im, __func__, "py=%u, ny=%u, in=%d", py, ny, in);
 		if (in) {
@@ -551,6 +596,8 @@ image_check_area(struct screen *s, u_int px, u_int py, u_int nx, u_int ny)
 
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
 		if (im->hidden)
+			continue;
+		if (im->type == IMAGE_KITTY)
 			continue;
 		in = (py < im->py + im->sy &&
 		    py + ny > im->py &&

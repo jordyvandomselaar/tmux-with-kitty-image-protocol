@@ -3905,6 +3905,7 @@ int		 kitty_validate_payload(struct kitty_image *);
 char		 kitty_get_action(struct kitty_image *);
 char		 kitty_get_medium(struct kitty_image *);
 u_int		 kitty_get_image_id(struct kitty_image *);
+void		 kitty_set_image_id(struct kitty_image *, u_int);
 u_int		 kitty_get_rows(struct kitty_image *);
 u_int		 kitty_get_placement_id(struct kitty_image *);
 u_int		 kitty_get_image_num(struct kitty_image *);

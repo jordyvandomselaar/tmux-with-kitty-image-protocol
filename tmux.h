@@ -3882,6 +3882,8 @@ int		 image_resize(struct screen *);
 void		 image_reparent_all(struct images *);
 struct image	*image_store(struct screen *, enum image_type, void *);
 #ifdef ENABLE_KITTY_IMAGES
+struct image	*image_store_kitty(struct screen *, struct kitty_image *,
+    struct image **);
 struct image	*image_store_kitty_upload(struct screen *,
 		     struct kitty_image *);
 int		 image_kitty_has_source(struct screen *, struct kitty_image *);
@@ -3920,6 +3922,8 @@ struct screen	*sixel_to_screen(struct sixel_image *);
 /* image-kitty.c */
 struct kitty_image *kitty_parse(const u_char *, size_t, u_int, u_int);
 void		 kitty_free(struct kitty_image *);
+struct kitty_image *kitty_clone_as_upload(struct kitty_image *);
+struct kitty_image *kitty_clone_as_placement(struct kitty_image *);
 size_t		 kitty_size_in_bytes(struct kitty_image *);
 int		 kitty_exceeds_chunk_limit(struct kitty_image *);
 void		 kitty_copy_source_metadata(struct kitty_image *,

@@ -184,6 +184,14 @@ grep -q 'EINVAL' $TMP && exit 1
 grep -q 'after-overwrite' $TMP || exit 1
 
 kill_server
+$TMUX -f$CONF new -d -x 20 -y 4 \
+    "printf '\033_Ga=T,q=1,i=86,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\one\r\ntwo\r\nthree\r\nfour\r\n\033_Ga=p,q=1,i=86,c=1,r=1\033\\\\after-reuse\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+grep -q 'after-reuse' $TMP || exit 1
+
+kill_server
 $TMUX -f$CONF new -d \
     "stty raw -echo min 0 time 10; printf '\033_Ga=t,I=7,t=d,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
 sleep 1.5

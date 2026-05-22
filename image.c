@@ -178,7 +178,7 @@ image_find_kitty_source(struct screen *s, struct kitty_image *ki)
 		return (NULL);
 
 	TAILQ_FOREACH(im, &s->images, entry) {
-		if (im->type != IMAGE_KITTY)
+		if (im->type != IMAGE_KITTY || !im->hidden)
 			continue;
 		existing = im->data.kitty;
 		if (kitty_get_action(existing) != 'T' &&
@@ -242,7 +242,7 @@ image_is_kitty_source(struct image *im)
 {
 	char	action;
 
-	if (im->type != IMAGE_KITTY)
+	if (im->type != IMAGE_KITTY || !im->hidden)
 		return (0);
 	action = kitty_get_action(im->data.kitty);
 	return (action == 'T' || action == 't');
@@ -282,11 +282,11 @@ image_kitty_generation(void)
 }
 
 static int
-image_kitty_is_new_source(struct kitty_image *ki)
+image_kitty_is_new_source(struct kitty_image *ki, int hidden)
 {
 	char	action = kitty_get_action(ki);
 
-	return (action == 'T' || action == 't');
+	return (hidden && (action == 'T' || action == 't'));
 }
 
 static int
@@ -310,10 +310,11 @@ image_is_kitty_source_referenced(struct image *im)
 		return (0);
 
 	TAILQ_FOREACH(other, im->images, entry) {
-		if (other == im || other->type != IMAGE_KITTY)
+		if (other == im || other->type != IMAGE_KITTY || other->hidden)
 			continue;
 		if (kitty_get_terminal_image_id(other->data.kitty) == image_id &&
-		    kitty_get_action(other->data.kitty) == 'p')
+		    (kitty_get_action(other->data.kitty) == 'T' ||
+		    kitty_get_action(other->data.kitty) == 'p'))
 			return (1);
 	}
 	return (0);
@@ -510,7 +511,7 @@ image_kitty_make_room(struct screen *s, struct kitty_image *ki, int hidden)
 	size_t	bytes, screen_bytes;
 	int	source, placement;
 
-	source = image_kitty_is_new_source(ki);
+	source = image_kitty_is_new_source(ki, hidden);
 	placement = image_kitty_is_new_placement(ki, hidden);
 	if (source && !image_kitty_make_room_count(s, IMAGE_KITTY_LIMIT_SOURCE,
 	    MAX_KITTY_SCREEN_SOURCE_COUNT, MAX_KITTY_TOTAL_SOURCE_COUNT))
@@ -874,10 +875,86 @@ image_fallback(char **ret, enum image_type type, u_int sx, u_int sy)
 	free(label);
 }
 
+#ifdef ENABLE_KITTY_IMAGES
+static struct image *
+image_store_kitty1(struct screen *s, struct kitty_image *ki, int hidden,
+    int replace)
+{
+	struct image	*im;
+
+	im = xcalloc(1, sizeof *im);
+	im->type = IMAGE_KITTY;
+	im->s = s;
+	im->images = &s->images;
+	im->hidden = hidden;
+	im->px = s->cx;
+	im->py = s->cy;
+
+	image_prepare_kitty(s, ki, hidden);
+	if (!image_kitty_make_room(s, ki, hidden)) {
+		free(im);
+		return (NULL);
+	}
+	if (replace)
+		image_kitty_replace(s, ki);
+	im->data.kitty = ki;
+	if (!hidden) {
+		kitty_size_in_cells(im->data.kitty, &im->sx, &im->sy);
+		image_fallback(&im->fallback, im->type, im->sx, im->sy);
+	}
+
+	image_log(im, __func__, NULL);
+	TAILQ_INSERT_TAIL(&s->images, im, entry);
+	TAILQ_INSERT_TAIL(&all_images, im, all_entry);
+	kitty_images_bytes += kitty_size_in_bytes(ki);
+	all_images_count++;
+	return (im);
+}
+
+struct image *
+image_store_kitty(struct screen *s, struct kitty_image *ki,
+    struct image **source)
+{
+	struct image		*source_im, *placement_im;
+	struct kitty_image	*source_ki, *placement_ki;
+
+	if (source != NULL)
+		*source = NULL;
+	if (kitty_get_action(ki) != 'T')
+		return (image_store_kitty1(s, ki, 0, 1));
+
+	image_prepare_kitty(s, ki, 0);
+	image_kitty_replace(s, ki);
+
+	source_ki = kitty_clone_as_upload(ki);
+	placement_ki = kitty_clone_as_placement(ki);
+	source_im = image_store_kitty1(s, source_ki, 1, 0);
+	if (source_im == NULL) {
+		kitty_free(source_ki);
+		kitty_free(placement_ki);
+		return (NULL);
+	}
+	placement_im = image_store_kitty1(s, placement_ki, 0, 0);
+	if (placement_im == NULL) {
+		image_free(source_im);
+		kitty_free(placement_ki);
+		return (NULL);
+	}
+	if (source != NULL)
+		*source = source_im;
+	return (placement_im);
+}
+#endif
+
 static struct image *
 image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 {
 	struct image	*im;
+
+#ifdef ENABLE_KITTY_IMAGES
+	if (type == IMAGE_KITTY)
+		return (image_store_kitty1(s, data, hidden, 1));
+#endif
 
 	im = xcalloc(1, sizeof *im);
 
@@ -897,19 +974,6 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 			sixel_size_in_cells(im->data.sixel, &im->sx, &im->sy);
 		break;
 #endif
-#ifdef ENABLE_KITTY_IMAGES
-	case IMAGE_KITTY:
-		image_prepare_kitty(s, data, hidden);
-		if (!image_kitty_make_room(s, data, hidden)) {
-			free(im);
-			return (NULL);
-		}
-		image_kitty_replace(s, data);
-		im->data.kitty = data;
-		if (!hidden)
-			kitty_size_in_cells(im->data.kitty, &im->sx, &im->sy);
-		break;
-#endif
 	default:
 		break;
 	}
@@ -918,16 +982,14 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 		image_fallback(&im->fallback, type, im->sx, im->sy);
 
 #ifdef ENABLE_KITTY_IMAGES
-	if (type != IMAGE_KITTY) {
-		while (image_count_from(&s->images) +
-		    image_count_from(&s->saved_images) + 1 >= MAX_IMAGE_COUNT) {
-			if (!image_free_oldest_generic_from_screen(s))
-				break;
-		}
-		while (image_count_all() + 1 >= MAX_IMAGE_COUNT) {
-			if (!image_free_oldest_generic())
-				break;
-		}
+	while (image_count_from(&s->images) +
+	    image_count_from(&s->saved_images) + 1 >= MAX_IMAGE_COUNT) {
+		if (!image_free_oldest_generic_from_screen(s))
+			break;
+	}
+	while (image_count_all() + 1 >= MAX_IMAGE_COUNT) {
+		if (!image_free_oldest_generic())
+			break;
 	}
 #else
 	while (image_count_from(&s->images) + image_count_from(&s->saved_images) +
@@ -944,12 +1006,7 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 
 	image_log(im, __func__, NULL);
 	TAILQ_INSERT_TAIL(&s->images, im, entry);
-
 	TAILQ_INSERT_TAIL(&all_images, im, all_entry);
-#ifdef ENABLE_KITTY_IMAGES
-	if (type == IMAGE_KITTY)
-		kitty_images_bytes += kitty_size_in_bytes(data);
-#endif
 	all_images_count++;
 
 	return (im);

@@ -2603,7 +2603,7 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 {
 	struct screen		*s = ctx->s;
 	struct tty_ctx		 ttyctx;
-	struct image		*im;
+	struct image		*im, *source;
 	u_int			 cy = s->cy, sy;
 
 	if (ki == NULL)
@@ -2611,7 +2611,7 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 	sy = screen_write_kittyimage_scroll(ctx, ki);
 
 	/* Store the image in the cache. */
-	im = image_store(s, IMAGE_KITTY, ki);
+	im = image_store_kitty(s, ki, &source);
 	if (im == NULL)
 		return (0);
 
@@ -2619,6 +2619,15 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 	if (im != NULL && ctx->wp != NULL) {
 		screen_write_collect_flush(ctx, 0, __func__);
 		screen_write_initctx(ctx, &ttyctx, 0);
+		if (source != NULL) {
+			ttyctx.ptr = source;
+			ttyctx.arg = ctx->wp;
+			ttyctx.ocx = s->cx;
+			ttyctx.ocy = s->cy;
+			ttyctx.set_client_cb = tty_set_client_cb;
+			tty_write(tty_cmd_kittyimage, &ttyctx);
+			screen_write_initctx(ctx, &ttyctx, 0);
+		}
 		ttyctx.ptr = im;
 		ttyctx.arg = ctx->wp;
 		ttyctx.ocx = s->cx;

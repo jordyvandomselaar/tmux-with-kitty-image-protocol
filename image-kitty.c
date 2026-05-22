@@ -978,6 +978,136 @@ kitty_control_append(char **ctrl, size_t *len, const char *data,
 	(*ctrl)[*len] = '\0';
 }
 
+static void
+kitty_control_append_uint(char **ctrl, size_t *len, char key, u_int value)
+{
+	char	*tmp;
+	size_t	 tmplen;
+
+	if (value == 0)
+		return;
+	tmplen = xasprintf(&tmp, "%c=%u", key, value);
+	kitty_control_append(ctrl, len, tmp, tmplen);
+	free(tmp);
+}
+
+static void
+kitty_control_append_int(char **ctrl, size_t *len, char key, int value)
+{
+	char	*tmp;
+	size_t	 tmplen;
+
+	if (value == 0)
+		return;
+	tmplen = xasprintf(&tmp, "%c=%d", key, value);
+	kitty_control_append(ctrl, len, tmp, tmplen);
+	free(tmp);
+}
+
+static void
+kitty_control_append_char(char **ctrl, size_t *len, char key, char value)
+{
+	char	*tmp;
+	size_t	 tmplen;
+
+	if (value == '\0')
+		return;
+	tmplen = xasprintf(&tmp, "%c=%c", key, value);
+	kitty_control_append(ctrl, len, tmp, tmplen);
+	free(tmp);
+}
+
+static void
+kitty_replace_control(struct kitty_image *ki, char *ctrl, size_t ctrllen)
+{
+	free(ki->ctrl);
+	ki->ctrl = ctrl;
+	ki->ctrllen = ctrllen;
+}
+
+static struct kitty_image *
+kitty_clone(struct kitty_image *ki)
+{
+	struct kitty_image	*new;
+
+	new = xcalloc(1, sizeof *new);
+	memcpy(new, ki, sizeof *new);
+	new->encoded = NULL;
+	new->ctrl = NULL;
+	if (ki->encoded != NULL && ki->encodedlen != 0) {
+		new->encoded = xmalloc(ki->encodedlen + 1);
+		memcpy(new->encoded, ki->encoded, ki->encodedlen);
+		new->encoded[ki->encodedlen] = '\0';
+	}
+	if (ki->ctrl != NULL && ki->ctrllen != 0) {
+		new->ctrl = xmalloc(ki->ctrllen + 1);
+		memcpy(new->ctrl, ki->ctrl, ki->ctrllen);
+		new->ctrl[ki->ctrllen] = '\0';
+	}
+	return (new);
+}
+
+struct kitty_image *
+kitty_clone_as_upload(struct kitty_image *ki)
+{
+	struct kitty_image	*new;
+	char			*ctrl;
+	size_t			 len = 0;
+
+	new = kitty_clone(ki);
+	new->action = 't';
+	new->cols = 0;
+	new->rows = 0;
+	new->placement_id = 0;
+	new->terminal_placement_id = 0;
+	new->cursor_policy = 0;
+
+	ctrl = xmalloc(1);
+	ctrl[0] = '\0';
+	kitty_control_append(&ctrl, &len, "a=t", 3);
+	kitty_control_append_char(&ctrl, &len, 't', new->medium);
+	kitty_control_append_uint(&ctrl, &len, 'f', new->format);
+	kitty_control_append_uint(&ctrl, &len, 's', new->pixel_w);
+	kitty_control_append_uint(&ctrl, &len, 'v', new->pixel_h);
+	kitty_control_append_char(&ctrl, &len, 'o', new->compression);
+	kitty_control_append_uint(&ctrl, &len, 'x', new->delete_x);
+	kitty_control_append_uint(&ctrl, &len, 'y', new->delete_y);
+	kitty_control_append_uint(&ctrl, &len, 'w', new->source_w);
+	kitty_control_append_uint(&ctrl, &len, 'h', new->source_h);
+	kitty_replace_control(new, ctrl, len);
+	return (new);
+}
+
+struct kitty_image *
+kitty_clone_as_placement(struct kitty_image *ki)
+{
+	struct kitty_image	*new;
+	char			*ctrl;
+	size_t			 len = 0;
+
+	new = kitty_clone(ki);
+	new->action = 'p';
+	free(new->encoded);
+	new->encoded = NULL;
+	new->encodedlen = 0;
+
+	ctrl = xmalloc(1);
+	ctrl[0] = '\0';
+	kitty_control_append(&ctrl, &len, "a=p", 3);
+	kitty_control_append_uint(&ctrl, &len, 'c', new->cols);
+	kitty_control_append_uint(&ctrl, &len, 'r', new->rows);
+	kitty_control_append_uint(&ctrl, &len, 'x', new->delete_x);
+	kitty_control_append_uint(&ctrl, &len, 'y', new->delete_y);
+	kitty_control_append_uint(&ctrl, &len, 'w', new->source_w);
+	kitty_control_append_uint(&ctrl, &len, 'h', new->source_h);
+	kitty_control_append_uint(&ctrl, &len, 'X', new->cell_x);
+	kitty_control_append_uint(&ctrl, &len, 'Y', new->cell_y);
+	kitty_control_append_int(&ctrl, &len, 'z', new->z_index);
+	kitty_control_append_uint(&ctrl, &len, 'C', new->cursor_policy);
+	kitty_replace_control(new, ctrl, len);
+	return (new);
+}
+
 static int
 kitty_control_has_override(const struct kitty_control_override *overrides,
     size_t noverrides, const char *token, size_t tokenlen)

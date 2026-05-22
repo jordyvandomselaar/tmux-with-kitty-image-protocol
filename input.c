@@ -2897,6 +2897,8 @@ input_apc_kitty_image(struct input_ctx *ictx)
 
 	/* Store image placements and trigger a redraw. */
 	if (kitty_get_action(ki) == 'T' || kitty_get_action(ki) == 'p') {
+		char	action = kitty_get_action(ki);
+
 		if (kitty_get_action(ki) == 'p' && !image_kitty_has_source(sctx->s,
 		    ki)) {
 			input_reply_kitty_error(ictx, ki,
@@ -2911,6 +2913,8 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			return;
 		}
 		input_reply_kitty_ok(ictx, ki);
+		if (action == 'T')
+			kitty_free(ki);
 	} else if (kitty_get_action(ki) == 't') {
 		if (!screen_write_kittyimage_upload(sctx, ki)) {
 			input_reply_kitty_error(ictx, ki,

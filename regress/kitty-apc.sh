@@ -31,6 +31,21 @@ script_client() {
 	return 1
 }
 
+script_client_input() {
+	input=$1
+	cmd="$TMUX -f$CONF new -x 20 -y 5 \"$2\""
+
+	: >$OUT
+	{ sleep 0.2; printf '%b' "$input"; sleep 0.1; } | \
+	    TERM=xterm-256color script -q "$OUT" sh -c "$cmd" \
+	    >/dev/null 2>&1 && return 0
+	: >$OUT
+	{ sleep 0.2; printf '%b' "$input"; sleep 0.1; } | \
+	    TERM=xterm-256color script -q -c "$cmd" "$OUT" \
+	    >/dev/null 2>&1 && return 0
+	return 1
+}
+
 trap 'kill_server; rm -f "$CONF" "$TMP" "$APC" "$OUT"' 0 1 15
 
 kill_server
@@ -51,8 +66,28 @@ if command -v script >/dev/null 2>&1; then
 	grep -aq 'a=p,c=1,r=1,q=1,i=' $OUT || exit 1
 	grep -aq 'KITTY IMAGE' $OUT && exit 1
 
+	script_client "printf '\033_Ga=T,q=1,i=96,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\'; sleep 0.2; $TMUX refresh-client; sleep 0.5" || exit 1
+	kill_server
+	[ "$(grep -ao 'a=t,t=d,f=24,s=1,v=1,q=1,i=' $OUT | wc -l | tr -d ' ')" -ge 2 ] || exit 1
+	grep -aq 'a=d,d=i,i=.*q=1' $OUT || exit 1
+	grep -aq 'a=d,d=i,i=.*p=.*q=1' $OUT || exit 1
+	grep -aq 'KITTY IMAGE' $OUT && exit 1
+
 	printf 'set -g allow-set-title on\nset -g status off\n' >$CONF
 	script_client "printf '\033_Ga=T,q=1,i=95,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\'; sleep 0.5" || exit 1
+	kill_server
+	grep -aq 'KITTY IMAGE (1x1)' $OUT || exit 1
+	grep -aq 'a=t,t=d,f=24,s=1,v=1,q=1,i=' $OUT && exit 1
+
+	script_client_input '\033_Gi=31;OK\033\\' \
+	    "sleep 0.4; printf '\033_Ga=T,q=1,i=97,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\'; sleep 0.5" || exit 1
+	kill_server
+	grep -aq 'a=t,t=d,f=24,s=1,v=1,q=1,i=' $OUT || exit 1
+	grep -aq 'a=p,c=1,r=1,q=1,i=' $OUT || exit 1
+	grep -aq 'KITTY IMAGE' $OUT && exit 1
+
+	script_client_input '\033_Gi=31;ENOSYS\033\\' \
+	    "sleep 0.4; printf '\033_Ga=T,q=1,i=98,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\'; sleep 0.5" || exit 1
 	kill_server
 	grep -aq 'KITTY IMAGE (1x1)' $OUT || exit 1
 	grep -aq 'a=t,t=d,f=24,s=1,v=1,q=1,i=' $OUT && exit 1

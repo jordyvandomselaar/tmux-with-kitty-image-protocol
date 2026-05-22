@@ -3879,6 +3879,7 @@ char		*regsub(const char *, const char *, const char *, int);
 int		 image_free_all(struct screen *);
 int		 image_free_all_saved(struct screen *);
 int		 image_resize(struct screen *);
+int		 image_resize_saved(struct screen *);
 void		 image_reparent_all(struct images *);
 struct image	*image_store(struct screen *, enum image_type, void *);
 #ifdef ENABLE_KITTY_IMAGES

@@ -2540,31 +2540,35 @@ screen_write_kittyimage_scroll(struct screen_write_ctx *ctx,
 {
 	struct screen	*s = ctx->s;
 	struct grid	*gd = s->grid;
-	u_int		 sx, sy, y, cy = s->cy, i, lines;
+	u_int		 sx, sy, y, cy = s->cy, i, lines, rupper, rlower;
 
 	if (kitty_get_cursor_policy(ki) || !kitty_has_height(ki))
 		return (0);
 	kitty_size_in_cells(ki, &sx, &y);
 	if (y == 0)
 		return (0);
-	if (screen_size_y(s) == 1)
+	rupper = s->rupper;
+	rlower = s->rlower;
+	if (cy < rupper || cy > rlower)
 		return (y);
-	if (y > screen_size_y(s) - 1)
-		y = screen_size_y(s) - 1;
+	if (rlower == rupper)
+		return (y);
+	if (y > rlower - rupper)
+		y = rlower - rupper;
 
-	sy = screen_size_y(s) - cy;
+	sy = rlower - cy + 1;
 	if (sy <= y) {
 		lines = y - sy + 1;
-		if (image_scroll_up(s, lines) && ctx->wp != NULL)
+		if (image_scroll_up_region(s, lines, rupper, rlower) &&
+		    ctx->wp != NULL)
 			ctx->wp->flags |= PANE_REDRAW;
 		for (i = 0; i < lines; i++) {
-			grid_view_scroll_region_up(gd, 0, screen_size_y(s) - 1,
-			    ctx->bg);
+			grid_view_scroll_region_up(gd, rupper, rlower, ctx->bg);
 			screen_write_collect_scroll(ctx, ctx->bg);
 		}
 		ctx->scrolled += lines;
-		if (lines > cy)
-			screen_write_cursormove(ctx, -1, 0, 0);
+		if (lines > cy - rupper)
+			screen_write_cursormove(ctx, -1, rupper, 0);
 		else
 			screen_write_cursormove(ctx, -1, cy - lines, 0);
 	}
@@ -2604,7 +2608,7 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 	struct screen		*s = ctx->s;
 	struct tty_ctx		 ttyctx;
 	struct image		*im, *source;
-	u_int			 cy = s->cy, sy;
+	u_int			 sy;
 
 	if (ki == NULL)
 		return (0);
@@ -2638,7 +2642,7 @@ screen_write_kittyimage(struct screen_write_ctx *ctx, struct kitty_image *ki)
 
 	/* Move cursor past the resolved image footprint unless disabled. */
 	if (im != NULL && sy > 0)
-		screen_write_cursormove(ctx, 0, cy + sy, 0);
+		screen_write_cursormove(ctx, 0, s->cy + sy, 0);
 	return (1);
 }
 #endif

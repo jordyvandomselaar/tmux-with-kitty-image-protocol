@@ -558,7 +558,7 @@ image_match_kitty(struct image *im, struct kitty_image *ki, char what)
 	y = kitty_get_delete_y(ki);
 
 	if (im->hidden &&
-	    (what == '\0' || strchr("aincpqrxyz", what) != NULL))
+	    (what == '\0' || strchr("acpqxyz", what) != NULL))
 		return (0);
 
 	switch (what) {
@@ -754,8 +754,8 @@ image_free_all(struct screen *s)
 	return (image_free_all1(&s->images));
 }
 
-int
-image_resize(struct screen *s)
+static int
+image_resize1(struct screen *s, struct images *images)
 {
 	struct image	*im, *im1;
 	int		 redraw = 0;
@@ -763,7 +763,7 @@ image_resize(struct screen *s)
 	u_int		 sx = screen_size_x(s), sy = screen_size_y(s), nx, ny;
 #endif
 
-	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
+	TAILQ_FOREACH_SAFE(im, images, entry, im1) {
 #ifdef ENABLE_KITTY_IMAGES
 		if (im->type == IMAGE_KITTY) {
 			if (im->hidden)
@@ -799,6 +799,18 @@ image_resize(struct screen *s)
 		redraw = 1;
 	}
 	return (redraw);
+}
+
+int
+image_resize(struct screen *s)
+{
+	return (image_resize1(s, &s->images));
+}
+
+int
+image_resize_saved(struct screen *s)
+{
+	return (image_resize1(s, &s->saved_images));
 }
 
 int

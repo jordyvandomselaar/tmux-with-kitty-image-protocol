@@ -753,6 +753,7 @@ screen_alternate_off(struct screen *s, struct grid_cell *gc, int cursor)
 
 #ifdef ENABLE_IMAGES
 	image_free_all(s);
+	image_resize_saved(s);
 	TAILQ_CONCAT(&s->images, &s->saved_images, entry);
 	image_reparent_all(&s->images);
 #endif

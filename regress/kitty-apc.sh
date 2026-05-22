@@ -255,6 +255,29 @@ grep -q '^two$' $TMP || exit 1
 [ "$(awk '/after-scroll/ { print NR; exit }' $TMP)" = 4 ] || exit 1
 
 kill_server
+$TMUX -f$CONF new -d -x 20 -y 5 \
+    "printf '\033[1;1Htop\033[2;1Hr2\033[3;1Hr3\033[4;1Hr4\033[5;1Hbottom\033[2;4r\033[4;1H\033_Ga=T,q=1,i=88,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\after-region'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(sed -n '1p' $TMP)" = "top" ] || exit 1
+[ "$(sed -n '2p' $TMP)" = "r3" ] || exit 1
+[ "$(sed -n '3p' $TMP)" = "r4" ] || exit 1
+[ "$(sed -n '4p' $TMP)" = "after-region" ] || exit 1
+[ "$(sed -n '5p' $TMP)" = "bottom" ] || exit 1
+
+kill_server
+$TMUX -f$CONF new -d -x 20 -y 5 \
+    "printf '\033[1;1Htop\033[2;1Hr2\033[3;1Hr3\033[4;1Hr4\033[5;1Hbottom\033[3;1H\033_Ga=T,q=1,i=89,t=d,f=24,s=1,v=1,c=1,r=1,C=1;AAAA\033\\\\\033[2;4r\033[2;1H\033[L\033[5;1H\033_Ga=p,q=1,i=89,c=1,r=1,C=1\033\\\\after-insert-line'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+[ "$(sed -n '1p' $TMP)" = "top" ] || exit 1
+[ "$(sed -n '2p' $TMP)" = "" ] || exit 1
+[ "$(sed -n '3p' $TMP)" = "r2" ] || exit 1
+[ "$(sed -n '4p' $TMP)" = "r3" ] || exit 1
+[ "$(sed -n '5p' $TMP)" = "after-insert-line" ] || exit 1
+
+kill_server
 $TMUX -f$CONF new -d \
     "printf '\033_Ga=T,t=d,f=24,s=2,v=1,c=2,r=1,m=1;AAAA\033\\\\\033_Gm=0;AAAA\033\\\\after-chunk\\n'; sleep 1"
 sleep 0.5
@@ -328,6 +351,14 @@ sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 grep -q 'EINVAL:unknown image id' $TMP || exit 1
 grep -q 'after-delete' $TMP || exit 1
+
+kill_server
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=t,q=1,i=87,t=d,f=24,s=1,v=1;AAAA\033\\\\\033_Ga=p,q=1,i=87,c=1,r=1\033\\\\\033_Ga=d,q=1,d=i,i=87\033\\\\\033_Ga=p,q=1,i=87,c=1,r=1\033\\\\after-delete-lower\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL:unknown image id' $TMP || exit 1
+grep -q 'after-delete-lower' $TMP || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \

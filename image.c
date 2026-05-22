@@ -46,6 +46,7 @@ static u_int		next_kitty_image_id = 0x80000000U;
 static u_int		next_kitty_placement_id = 0x80000000U;
 static u_int		kitty_images_generation;
 static size_t		kitty_images_bytes;
+static size_t		kitty_pending_bytes;
 
 enum image_kitty_limit_type {
 	IMAGE_KITTY_LIMIT_ANY,
@@ -456,6 +457,36 @@ image_kitty_count_screen(struct screen *s, enum image_kitty_limit_type type)
 	    image_kitty_count_from(&s->saved_images, type));
 }
 
+int
+image_kitty_update_pending(size_t old, size_t new)
+{
+	size_t	pending;
+
+	if (old > kitty_pending_bytes)
+		pending = 0;
+	else
+		pending = kitty_pending_bytes - old;
+	if (new > SIZE_MAX - pending)
+		return (0);
+	pending += new;
+
+	if (pending > MAX_KITTY_TOTAL_IMAGE_BYTES)
+		return (0);
+	if (kitty_images_bytes > MAX_KITTY_TOTAL_IMAGE_BYTES - pending)
+		return (0);
+	kitty_pending_bytes = pending;
+	return (1);
+}
+
+void
+image_kitty_remove_pending(size_t bytes)
+{
+	if (bytes > kitty_pending_bytes)
+		kitty_pending_bytes = 0;
+	else
+		kitty_pending_bytes -= bytes;
+}
+
 static void
 image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
 {
@@ -546,7 +577,10 @@ image_kitty_make_room(struct screen *s, struct kitty_image *ki, int hidden)
 		screen_bytes = image_kitty_bytes_from(&s->images) +
 		    image_kitty_bytes_from(&s->saved_images);
 	}
-	while (kitty_images_bytes + bytes > MAX_KITTY_TOTAL_IMAGE_BYTES) {
+	while (kitty_pending_bytes > MAX_KITTY_TOTAL_IMAGE_BYTES ||
+	    bytes > MAX_KITTY_TOTAL_IMAGE_BYTES - kitty_pending_bytes ||
+	    kitty_images_bytes > MAX_KITTY_TOTAL_IMAGE_BYTES -
+	    kitty_pending_bytes - bytes) {
 		if (image_free_oldest_kitty_from_screen(s, IMAGE_KITTY_LIMIT_ANY))
 			continue;
 		if (!image_free_oldest_kitty(IMAGE_KITTY_LIMIT_ANY))

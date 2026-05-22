@@ -3890,6 +3890,8 @@ struct image	*image_store_kitty_upload(struct screen *,
 int		 image_prepare_kitty_display(struct screen *,
 		     struct kitty_image *);
 int		 image_kitty_has_source(struct screen *, struct kitty_image *);
+int		 image_kitty_update_pending(size_t, size_t);
+void		 image_kitty_remove_pending(size_t);
 u_int		 image_kitty_generation(void);
 int		 image_kitty_insert_lines(struct screen *, u_int, u_int, u_int);
 int		 image_kitty_delete_lines(struct screen *, u_int, u_int, u_int);

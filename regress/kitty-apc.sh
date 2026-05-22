@@ -375,6 +375,13 @@ sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-chunk/ { print NR; exit }' $TMP)" = 2 ] || exit 1
 
+kill_server
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,q=1,t=d,f=24,s=2,v=1,c=2,r=1,m=1;AAAA\033\\\\'; sleep 6; printf '\033_Gm=0;AAAA\033\\\\after-expired-chunk\\n'; sleep 1"
+sleep 6.8
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-expired-chunk/ { print NR; exit }' $TMP)" = 1 ] || exit 1
+
 {
 	printf '\033_Ga=T,q=1,t=d,f=24,s=262500,v=1,c=1,r=1,m=1;'
 	head -c 4000 /dev/zero | tr '\000' A

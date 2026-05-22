@@ -116,6 +116,9 @@ struct input_ctx {
 	size_t				param_len;
 
 #define INPUT_BUF_START 32
+#ifdef ENABLE_KITTY_IMAGES
+#define INPUT_KITTY_PENDING_TIMEOUT 5
+#endif
 	u_char			       *input_buf;
 	size_t				input_len;
 	size_t				input_space;
@@ -148,6 +151,8 @@ struct input_ctx {
 
 #ifdef ENABLE_KITTY_IMAGES
 	struct kitty_image		*kitty_pending;
+	size_t				 kitty_pending_bytes;
+	struct event			 kitty_pending_timer;
 #endif
 };
 
@@ -155,6 +160,14 @@ struct input_ctx {
 struct input_transition;
 static void 	input_request_timer_callback(int, short, void *);
 static void	input_start_request_timer(struct input_ctx *);
+#ifdef ENABLE_KITTY_IMAGES
+static void	input_kitty_pending_timer_callback(int, short, void *);
+static void	input_start_kitty_pending_timer(struct input_ctx *);
+static void	input_clear_kitty_pending(struct input_ctx *);
+static struct kitty_image *input_take_kitty_pending(struct input_ctx *);
+static int	input_save_kitty_pending(struct input_ctx *, struct kitty_image *);
+static int	input_update_kitty_pending(struct input_ctx *);
+#endif
 static struct input_request *input_make_request(struct input_ctx *,
 		    enum input_request_type);
 static void	input_free_request(struct input_request *);
@@ -817,6 +830,77 @@ input_start_ground_timer(struct input_ctx *ictx)
 	event_add(&ictx->ground_timer, &tv);
 }
 
+#ifdef ENABLE_KITTY_IMAGES
+static void
+input_kitty_pending_timer_callback(__unused int fd, __unused short events,
+    void *arg)
+{
+	struct input_ctx	*ictx = arg;
+
+	log_debug("%s: expired", __func__);
+	input_clear_kitty_pending(ictx);
+}
+
+static void
+input_start_kitty_pending_timer(struct input_ctx *ictx)
+{
+	struct timeval	tv = { .tv_sec = INPUT_KITTY_PENDING_TIMEOUT,
+			       .tv_usec = 0 };
+
+	event_del(&ictx->kitty_pending_timer);
+	event_add(&ictx->kitty_pending_timer, &tv);
+}
+
+static void
+input_clear_kitty_pending(struct input_ctx *ictx)
+{
+	event_del(&ictx->kitty_pending_timer);
+	image_kitty_remove_pending(ictx->kitty_pending_bytes);
+	ictx->kitty_pending_bytes = 0;
+	kitty_free(ictx->kitty_pending);
+	ictx->kitty_pending = NULL;
+}
+
+static struct kitty_image *
+input_take_kitty_pending(struct input_ctx *ictx)
+{
+	struct kitty_image	*ki = ictx->kitty_pending;
+
+	event_del(&ictx->kitty_pending_timer);
+	image_kitty_remove_pending(ictx->kitty_pending_bytes);
+	ictx->kitty_pending_bytes = 0;
+	ictx->kitty_pending = NULL;
+	return (ki);
+}
+
+static int
+input_save_kitty_pending(struct input_ctx *ictx, struct kitty_image *ki)
+{
+	size_t	bytes;
+
+	bytes = kitty_size_in_bytes(ki);
+	if (!image_kitty_update_pending(0, bytes))
+		return (0);
+	ictx->kitty_pending = ki;
+	ictx->kitty_pending_bytes = bytes;
+	input_start_kitty_pending_timer(ictx);
+	return (1);
+}
+
+static int
+input_update_kitty_pending(struct input_ctx *ictx)
+{
+	size_t	bytes;
+
+	bytes = kitty_size_in_bytes(ictx->kitty_pending);
+	if (!image_kitty_update_pending(ictx->kitty_pending_bytes, bytes))
+		return (0);
+	ictx->kitty_pending_bytes = bytes;
+	input_start_kitty_pending_timer(ictx);
+	return (1);
+}
+#endif
+
 /* Reset cell state to default. */
 static void
 input_reset_cell(struct input_ctx *ictx)
@@ -877,6 +961,10 @@ input_init(struct window_pane *wp, struct bufferevent *bev,
 	if (ictx->since_ground == NULL)
 		fatalx("out of memory");
 	evtimer_set(&ictx->ground_timer, input_ground_timer_callback, ictx);
+#ifdef ENABLE_KITTY_IMAGES
+	evtimer_set(&ictx->kitty_pending_timer,
+	    input_kitty_pending_timer_callback, ictx);
+#endif
 
 	TAILQ_INIT(&ictx->requests);
 	evtimer_set(&ictx->request_timer, input_request_timer_callback, ictx);
@@ -906,7 +994,7 @@ input_free(struct input_ctx *ictx)
 	event_del(&ictx->ground_timer);
 
 #ifdef ENABLE_KITTY_IMAGES
-	kitty_free(ictx->kitty_pending);
+	input_clear_kitty_pending(ictx);
 #endif
 
 	screen_write_stop_sync(ictx->wp);
@@ -922,8 +1010,7 @@ input_reset(struct input_ctx *ictx, int clear)
 	struct window_pane	*wp = ictx->wp;
 
 #ifdef ENABLE_KITTY_IMAGES
-	kitty_free(ictx->kitty_pending);
-	ictx->kitty_pending = NULL;
+	input_clear_kitty_pending(ictx);
 #endif
 
 	input_reset_cell(ictx);
@@ -2815,8 +2902,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		if (ictx->kitty_pending != NULL)
 			input_reply_kitty_error(ictx, ictx->kitty_pending,
 			    "EINVAL:invalid image data");
-		kitty_free(ictx->kitty_pending);
-		ictx->kitty_pending = NULL;
+		input_clear_kitty_pending(ictx);
 		return;
 	}
 	if (kitty_exceeds_chunk_limit(ki)) {
@@ -2826,8 +2912,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		else
 			input_reply_kitty_error(ictx, ki,
 			    "EINVAL:invalid image data");
-		kitty_free(ictx->kitty_pending);
-		ictx->kitty_pending = NULL;
+		input_clear_kitty_pending(ictx);
 		kitty_free(ki);
 		return;
 	}
@@ -2836,25 +2921,33 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		if (!kitty_is_continuation(ki)) {
 			input_reply_kitty_error(ictx, ictx->kitty_pending,
 			    "EINVAL:invalid image data");
-			kitty_free(ictx->kitty_pending);
-			ictx->kitty_pending = NULL;
+			input_clear_kitty_pending(ictx);
 			kitty_free(ki);
 			return;
 		}
 		switch (kitty_append(ictx->kitty_pending, ki)) {
 		case 0:
 			kitty_free(ki);
+			if (!input_update_kitty_pending(ictx)) {
+				input_reply_kitty_error(ictx, ictx->kitty_pending,
+				    "EINVAL:image data too large");
+				input_clear_kitty_pending(ictx);
+			}
 			return;
 		case 1:
 			kitty_free(ki);
-			ki = ictx->kitty_pending;
-			ictx->kitty_pending = NULL;
+			if (!input_update_kitty_pending(ictx)) {
+				input_reply_kitty_error(ictx, ictx->kitty_pending,
+				    "EINVAL:image data too large");
+				input_clear_kitty_pending(ictx);
+				return;
+			}
+			ki = input_take_kitty_pending(ictx);
 			break;
 		default:
 			input_reply_kitty_error(ictx, ictx->kitty_pending,
 			    "EINVAL:invalid image data");
-			kitty_free(ictx->kitty_pending);
-			ictx->kitty_pending = NULL;
+			input_clear_kitty_pending(ictx);
 			kitty_free(ki);
 			return;
 		}
@@ -2862,7 +2955,11 @@ input_apc_kitty_image(struct input_ctx *ictx)
 		kitty_free(ki);
 		return;
 	} else if (kitty_is_incomplete(ki)) {
-		ictx->kitty_pending = ki;
+		if (!input_save_kitty_pending(ictx, ki)) {
+			input_reply_kitty_error(ictx, ki,
+			    "EINVAL:image data too large");
+			kitty_free(ki);
+		}
 		return;
 	}
 

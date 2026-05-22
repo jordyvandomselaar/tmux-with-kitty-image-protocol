@@ -2608,6 +2608,11 @@ screen_write_alternateon(struct screen_write_ctx *ctx, struct grid_cell *gc,
 		return;
 
 	screen_write_collect_flush(ctx, 0, __func__);
+
+#ifdef ENABLE_KITTY_IMAGES
+	if (wp != NULL)
+		tty_kitty_delete_owned_pane(wp);
+#endif
 	screen_alternate_on(ctx->s, gc, cursor);
 
 	if (wp != NULL) {
@@ -2632,6 +2637,11 @@ screen_write_alternateoff(struct screen_write_ctx *ctx, struct grid_cell *gc,
 		return;
 
 	screen_write_collect_flush(ctx, 0, __func__);
+
+#ifdef ENABLE_KITTY_IMAGES
+	if (wp != NULL)
+		tty_kitty_delete_owned_pane(wp);
+#endif
 	screen_alternate_off(ctx->s, gc, cursor);
 
 	if (wp != NULL) {

@@ -82,6 +82,7 @@ tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
 
 PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
 BAD_PNG_HEADER='iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB'
+INTERLACED_PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAAHncGNIAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC'
 ZLIB_RGB_1X1='eJxjYGAAAAADAAE='
 kill_server
 $TMUX -f$CONF new -d \
@@ -96,6 +97,13 @@ $TMUX -f$CONF new -d \
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-bad-png/ { print NR; exit }' $TMP)" = 1 ] || exit 1
+
+kill_server
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,t=d,f=100;$INTERLACED_PNG_1X1\033\\\\after-interlaced-png\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-interlaced-png/ { print NR; exit }' $TMP)" = 1 ] || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \

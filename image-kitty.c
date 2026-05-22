@@ -34,7 +34,8 @@
 #define KITTY_PNG_HEADER_SIZE 24
 #define KITTY_PNG_SIGNATURE_SIZE 8
 #define KITTY_PNG_IHDR_SIZE 13
-#define KITTY_QUIET_SUPPRESS_RESPONSES 2
+#define KITTY_QUIET_SUPPRESS_OK 1
+#define KITTY_QUIET_SUPPRESS_FAILURES 2
 #define KITTY_QUIET_UNCHANGED ((u_int)-1)
 
 struct kitty_control_override {
@@ -381,8 +382,7 @@ kitty_png_expected_size(u_int width, u_int height, u_int bit_depth,
 }
 
 static int
-kitty_png_validate_idat(const u_char *idat, size_t idatlen,
-    uint64_t expected, int check_expected)
+kitty_png_validate_idat(const u_char *idat, size_t idatlen, uint64_t expected)
 {
 	u_char		 out[4096];
 	z_stream	 zs;
@@ -391,7 +391,7 @@ kitty_png_validate_idat(const u_char *idat, size_t idatlen,
 
 	if (idatlen == 0 || idatlen > UINT_MAX)
 		return (0);
-	if (check_expected && expected > SIZE_MAX)
+	if (expected > SIZE_MAX)
 		return (0);
 
 	memset(&zs, 0, sizeof zs);
@@ -405,7 +405,7 @@ kitty_png_validate_idat(const u_char *idat, size_t idatlen,
 		zs.avail_out = sizeof out;
 		ret = inflate(&zs, Z_NO_FLUSH);
 		total += sizeof out - zs.avail_out;
-		if (check_expected && total > expected) {
+		if (total > expected) {
 			inflateEnd(&zs);
 			return (0);
 		}
@@ -414,7 +414,7 @@ kitty_png_validate_idat(const u_char *idat, size_t idatlen,
 	inflateEnd(&zs);
 	if (ret != Z_STREAM_END || zs.avail_in != 0)
 		return (0);
-	return (!check_expected || total == expected);
+	return (total == expected);
 }
 
 static void
@@ -488,7 +488,7 @@ kitty_validate_png_payload(struct kitty_image *ki, u_char *out, size_t outlen)
 			filter = data[11];
 			interlace = data[12];
 			if (width == 0 || height == 0 || compression != 0 ||
-			    filter != 0 || interlace > 1)
+			    filter != 0 || interlace != 0)
 				goto out;
 			if (!kitty_png_bit_depth_valid(bit_depth, color_type))
 				goto out;
@@ -530,10 +530,10 @@ kitty_validate_png_payload(struct kitty_image *ki, u_char *out, size_t outlen)
 		goto out;
 	if (color_type == 3 && !seen_plte)
 		goto out;
-	if (interlace == 0 && !kitty_png_expected_size(width, height, bit_depth,
-	    color_type, &expected))
+	if (!kitty_png_expected_size(width, height, bit_depth, color_type,
+	    &expected))
 		goto out;
-	if (!kitty_png_validate_idat(idat, idatlen, expected, interlace == 0))
+	if (!kitty_png_validate_idat(idat, idatlen, expected))
 		goto out;
 
 	if (ki->pixel_w == 0)
@@ -836,6 +836,18 @@ u_int
 kitty_get_quiet(struct kitty_image *ki)
 {
 	return (ki->quiet);
+}
+
+int
+kitty_quiet_suppresses_ok(struct kitty_image *ki)
+{
+	return (ki->quiet == KITTY_QUIET_SUPPRESS_OK);
+}
+
+int
+kitty_quiet_suppresses_errors(struct kitty_image *ki)
+{
+	return (ki->quiet == KITTY_QUIET_SUPPRESS_FAILURES);
 }
 
 int
@@ -1186,7 +1198,7 @@ char *
 kitty_print_quiet(struct kitty_image *ki, size_t *outlen)
 {
 	return (kitty_print_with_overrides(ki, outlen,
-	    KITTY_QUIET_SUPPRESS_RESPONSES, NULL, 0));
+	    KITTY_QUIET_SUPPRESS_OK, NULL, 0));
 }
 
 char *
@@ -1197,7 +1209,7 @@ kitty_print_redraw(struct kitty_image *ki, size_t *outlen)
 	overrides[0].key = 'C';
 	overrides[0].value = "1";
 	return (kitty_print_with_overrides(ki, outlen,
-	    KITTY_QUIET_SUPPRESS_RESPONSES, overrides, 1));
+	    KITTY_QUIET_SUPPRESS_OK, overrides, 1));
 }
 
 char *
@@ -1272,7 +1284,7 @@ kitty_print_clipped(struct kitty_image *ki, u_int xoff, u_int yoff,
 	overrides[6].value = "1";
 
 	return (kitty_print_with_overrides(ki, outlen,
-	    KITTY_QUIET_SUPPRESS_RESPONSES, overrides, 7));
+	    KITTY_QUIET_SUPPRESS_OK, overrides, 7));
 }
 
 char *
@@ -1281,10 +1293,10 @@ kitty_delete_image(u_int image_id, u_int placement_id, size_t *outlen)
 	char	*out;
 
 	if (placement_id != 0) {
-		*outlen = xasprintf(&out, "\033_Ga=d,d=i,i=%u,p=%u,q=2\033\\",
+		*outlen = xasprintf(&out, "\033_Ga=d,d=i,i=%u,p=%u,q=1\033\\",
 		    image_id, placement_id);
 		return (out);
 	}
-	*outlen = xasprintf(&out, "\033_Ga=d,d=i,i=%u,q=2\033\\", image_id);
+	*outlen = xasprintf(&out, "\033_Ga=d,d=i,i=%u,q=1\033\\", image_id);
 	return (out);
 }

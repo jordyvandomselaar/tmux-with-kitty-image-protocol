@@ -3944,6 +3944,8 @@ void		 kitty_set_terminal_image_id(struct kitty_image *, u_int);
 u_int		 kitty_get_terminal_placement_id(struct kitty_image *);
 void		 kitty_set_terminal_placement_id(struct kitty_image *, u_int);
 u_int		 kitty_get_quiet(struct kitty_image *);
+int		 kitty_quiet_suppresses_ok(struct kitty_image *);
+int		 kitty_quiet_suppresses_errors(struct kitty_image *);
 int		 kitty_has_more(struct kitty_image *);
 int		 kitty_is_incomplete(struct kitty_image *);
 int		 kitty_is_continuation(struct kitty_image *);

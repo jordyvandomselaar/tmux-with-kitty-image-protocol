@@ -1447,7 +1447,11 @@ screen_write_reverseindex(struct screen_write_ctx *ctx, u_int bg)
 
 	if (s->cy == s->rupper) {
 #ifdef ENABLE_IMAGES
-		if (image_free_all(s) && ctx->wp != NULL)
+		if (image_check_line(s, 0, screen_size_y(s)) && ctx->wp != NULL)
+			ctx->wp->flags |= PANE_REDRAW;
+#endif
+#ifdef ENABLE_KITTY_IMAGES
+		if (image_kitty_scroll_down(s, 1) && ctx->wp != NULL)
 			ctx->wp->flags |= PANE_REDRAW;
 #endif
 

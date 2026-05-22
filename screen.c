@@ -364,7 +364,7 @@ screen_resize_cursor(struct screen *s, u_int sx, u_int sy, int reflow,
 		screen_resize_y(s, sy, eat_empty, &cy);
 
 #ifdef ENABLE_IMAGES
-	image_free_all(s);
+	image_resize(s);
 #endif
 
 	if (reflow)

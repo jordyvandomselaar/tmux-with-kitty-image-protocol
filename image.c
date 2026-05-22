@@ -35,6 +35,8 @@ static u_int		next_kitty_placement_id = 0x80000000U;
 static u_int		kitty_images_generation;
 #endif
 
+static void		 image_fallback(char **, enum image_type, u_int, u_int);
+
 static void printflike(3, 4)
 image_log(struct image *im, const char* from, const char* fmt, ...)
 {
@@ -391,17 +393,35 @@ image_kitty_delete(struct screen *s, struct kitty_image *ki)
 static int
 image_kitty_replace(struct screen *s, struct kitty_image *ki)
 {
+	struct image		*im, *im1;
+	struct kitty_image	*existing;
 	char	 action;
+	u_int	 image_id, image_num;
+	int	 redraw = 0;
 
 	if (s == NULL || ki == NULL)
 		return (0);
 
 	action = kitty_get_action(ki);
 	if (action == 'T' || action == 't') {
-		if (kitty_get_image_id(ki) != 0)
-			return (image_remove_kitty(s, ki, 'I'));
-		if (kitty_get_image_num(ki) != 0)
-			return (image_remove_kitty(s, ki, 'N'));
+		image_id = kitty_get_image_id(ki);
+		image_num = kitty_get_image_num(ki);
+		if (image_id != 0 || image_num != 0) {
+			TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
+				if (im->type != IMAGE_KITTY)
+					continue;
+				existing = im->data.kitty;
+				if ((image_id != 0 &&
+				    kitty_get_image_id(existing) == image_id) ||
+				    (image_num != 0 &&
+				    kitty_get_image_num(existing) == image_num)) {
+					if (!im->hidden)
+						redraw = 1;
+					image_free(im);
+				}
+			}
+			return (redraw);
+		}
 	}
 	return (image_remove_kitty(s, ki, '\0'));
 }
@@ -424,6 +444,53 @@ int
 image_free_all(struct screen *s)
 {
 	return (image_free_all1(&s->images));
+}
+
+int
+image_resize(struct screen *s)
+{
+	struct image	*im, *im1;
+	int		 redraw = 0;
+#ifdef ENABLE_KITTY_IMAGES
+	u_int		 sx = screen_size_x(s), sy = screen_size_y(s), nx, ny;
+#endif
+
+	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
+#ifdef ENABLE_KITTY_IMAGES
+		if (im->type == IMAGE_KITTY) {
+			if (im->hidden)
+				continue;
+			if (im->px >= sx || im->py >= sy) {
+				image_free(im);
+				redraw = 1;
+				continue;
+			}
+			nx = im->sx;
+			if (nx > sx - im->px)
+				nx = sx - im->px;
+			ny = im->sy;
+			if (ny > sy - im->py)
+				ny = sy - im->py;
+			if (nx == 0 || ny == 0) {
+				image_free(im);
+				redraw = 1;
+				continue;
+			}
+			if (nx != im->sx || ny != im->sy) {
+				im->sx = nx;
+				im->sy = ny;
+				free(im->fallback);
+				image_fallback(&im->fallback, im->type, im->sx,
+				    im->sy);
+				redraw = 1;
+			}
+			continue;
+		}
+#endif
+		image_free(im);
+		redraw = 1;
+	}
+	return (redraw);
 }
 
 int

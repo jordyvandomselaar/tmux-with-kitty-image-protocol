@@ -159,5 +159,23 @@ $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-abort/ { print NR; exit }' $TMP)" = 1 ] || exit 1
 
 $TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d -x 40 -y 8 \
+    "printf '\033_Ga=t,q=1,i=71,t=d,f=24,s=1,v=1;AAAA\033\\\\after-resize-transmit\\n'; sleep 1; printf '\033_Ga=p,q=1,i=71,c=1,r=1\033\\\\after-resize-place\\n'; sleep 1"
+sleep 0.3
+$TMUX resize-window -x 30 -y 6 || exit 1
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+[ "$(awk '/after-resize-place/ { print NR; exit }' $TMP)" = 3 ] || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d -x 40 -y 8 \
+    "printf '\033_Ga=t,q=1,i=72,t=d,f=24,s=1,v=1;AAAA\033\\\\after-ri-transmit\\n'; printf '\033[H\033M'; printf '\033_Ga=p,q=1,i=72,c=1,r=1\033\\\\after-ri-place\\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+[ "$(awk '/after-ri-place/ { print NR; exit }' $TMP)" = 2 ] || exit 1
+
+$TMUX kill-server 2>/dev/null
 
 exit 0

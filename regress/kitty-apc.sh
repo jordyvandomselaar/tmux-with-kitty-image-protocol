@@ -226,7 +226,7 @@ grep -q 'second-place' $TMP || exit 1
 
 {
 	i=1
-	while [ $i -le 25 ]; do
+	while [ $i -le 401 ]; do
 		printf '\033_Ga=t,q=1,i=%s,t=d,f=24,s=1,v=1;AAAA\033\\' "$i"
 		i=$((i + 1))
 	done
@@ -236,7 +236,7 @@ kill_server
 $TMUX -f$CONF new -d "cat '$APC'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
-grep -q 'EINVAL' $TMP && exit 1
+grep -q 'EINVAL:unknown image id' $TMP || exit 1
 grep -q 'after-source-quota' $TMP || exit 1
 
 kill_server

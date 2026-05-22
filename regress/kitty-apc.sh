@@ -80,6 +80,22 @@ $TMUX capturep -pS0 >$TMP || exit 1
 tr -s '[:space:]' ' ' <$TMP | grep -q '45 4e 4f 53 59 53' && exit 1
 tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
 
+kill_server
+$TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=q,t=d,f=1,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' && exit 1
+
+kill_server
+$TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=q,t=d,o=x,f=24,s=1,v=1;AAAA\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' && exit 1
+
 PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
 BAD_PNG_HEADER='iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB'
 INTERLACED_PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAAHncGNIAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC'
@@ -127,6 +143,21 @@ $TMUX capturep -pS0 >$TMP || exit 1
 grep -q 'EINVAL' $TMP && exit 1
 grep -q 'second-place' $TMP || exit 1
 
+{
+	i=1
+	while [ $i -le 25 ]; do
+		printf '\033_Ga=t,q=1,i=%s,t=d,f=24,s=1,v=1;AAAA\033\\' "$i"
+		i=$((i + 1))
+	done
+	printf '\033_Ga=p,q=1,i=1,c=1,r=1\033\\after-source-quota\n'
+} >$APC
+kill_server
+$TMUX -f$CONF new -d "cat '$APC'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+grep -q 'after-source-quota' $TMP || exit 1
+
 kill_server
 $TMUX -f$CONF new -d \
     "printf '\033_Ga=T,q=1,i=85,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\\033[Hcover\033_Ga=p,q=1,i=85,c=1,r=1\033\\\\after-overwrite\n'; sleep 1"
@@ -170,10 +201,17 @@ tr -s '[:space:]' ' ' <$TMP | grep -q \
 
 kill_server
 $TMUX -f$CONF new -d \
-    "printf '\033_Ga=T,t=f,f=100,s=1,v=1,r=1;L3RtcC9pbWc=\033\\\\after-file\\n'; sleep 1"
-sleep 0.5
+    "stty raw -echo min 0 time 10; printf '\033_Ga=T,t=f,f=100,s=1,v=1,r=1;L3RtcC9pbWc=\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
 $TMUX capturep -pS0 >$TMP || exit 1
-[ "$(awk '/after-file/ { print NR; exit }' $TMP)" = 1 ] || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' || exit 1
+
+kill_server
+$TMUX -f$CONF new -d \
+    "stty raw -echo min 0 time 10; printf '\033_Ga=T,q=2,t=f,f=100,s=1,v=1,r=1;L3RtcC9pbWc=\033\\\\'; dd bs=1 count=128 2>/dev/null | od -An -tx1; sleep 1"
+sleep 1.5
+$TMUX capturep -pS0 >$TMP || exit 1
+tr -s '[:space:]' ' ' <$TMP | grep -q '45 49 4e 56 41 4c' && exit 1
 
 kill_server
 $TMUX -f$CONF new -d \

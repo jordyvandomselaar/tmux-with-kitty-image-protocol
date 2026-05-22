@@ -616,6 +616,23 @@ kitty_validate_raw_payload(struct kitty_image *ki, size_t outlen)
 	return (outlen == bytes * depth);
 }
 
+const char *
+kitty_payload_support_error(struct kitty_image *ki)
+{
+	char	action;
+
+	action = ki->action;
+	if (action != 'T' && action != 't' && action != 'q')
+		return (NULL);
+	if (ki->medium != 'd')
+		return ("EINVAL:unsupported transmission medium");
+	if (ki->format != 24 && ki->format != 32 && ki->format != 100)
+		return ("EINVAL:unsupported image format");
+	if (ki->compression != '\0' && ki->compression != 'z')
+		return ("EINVAL:unsupported compression");
+	return (NULL);
+}
+
 /*
  * Parse a kitty APC body (after the leading 'G').
  * Stores the original control string and base64 payload verbatim for

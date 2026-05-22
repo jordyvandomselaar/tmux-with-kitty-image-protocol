@@ -2795,20 +2795,6 @@ input_reply_kitty_error(struct input_ctx *ictx, struct kitty_image *ki,
 	input_reply_kitty(ictx, ki, message);
 }
 
-static int
-input_kitty_medium_supported(struct kitty_image *ki)
-{
-	switch (kitty_get_action(ki)) {
-	case 'T':
-	case 't':
-		return (kitty_get_medium(ki) == 'd');
-	default:
-		return (1);
-	}
-}
-#endif
-
-#ifdef ENABLE_KITTY_IMAGES
 /* Handle a kitty graphics APC sequence. */
 static void
 input_apc_kitty_image(struct input_ctx *ictx)
@@ -2817,6 +2803,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 	struct window_pane	*wp = ictx->wp;
 	struct window		*w;
 	struct kitty_image	*ki;
+	const char		*error;
 
 	if (wp == NULL)
 		return;
@@ -2881,17 +2868,17 @@ input_apc_kitty_image(struct input_ctx *ictx)
 
 	/* Handle query commands. */
 	if (kitty_get_action(ki) == 'q') {
-		if (kitty_get_medium(ki) != 'd') {
-			input_reply_kitty_error(ictx, ki,
-			    "EINVAL:unsupported transmission medium");
-		} else
+		error = kitty_payload_support_error(ki);
+		if (error != NULL)
+			input_reply_kitty_error(ictx, ki, error);
+		else
 			input_reply_kitty_ok(ictx, ki);
 		kitty_free(ki);
 		return;
 	}
-	if (!input_kitty_medium_supported(ki)) {
-		input_reply_kitty_error(ictx, ki,
-		    "EINVAL:unsupported transmission medium");
+	error = kitty_payload_support_error(ki);
+	if (error != NULL) {
+		input_reply_kitty_error(ictx, ki, error);
 		kitty_free(ki);
 		return;
 	}

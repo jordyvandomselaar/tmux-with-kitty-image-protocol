@@ -3926,6 +3926,7 @@ void		 kitty_copy_source_metadata(struct kitty_image *,
 		     struct kitty_image *);
 void		 kitty_size_in_cells(struct kitty_image *, u_int *, u_int *);
 int		 kitty_has_height(struct kitty_image *);
+const char	*kitty_payload_support_error(struct kitty_image *);
 int		 kitty_validate_payload(struct kitty_image *);
 char		 kitty_get_action(struct kitty_image *);
 char		 kitty_get_medium(struct kitty_image *);

@@ -29,6 +29,10 @@ static u_int		all_images_count;
 #define MAX_IMAGE_COUNT 20
 #ifdef ENABLE_KITTY_IMAGES
 #define MAX_TOTAL_IMAGE_COUNT (MAX_IMAGE_COUNT * MAX_IMAGE_COUNT)
+#define MAX_KITTY_SCREEN_SOURCE_COUNT MAX_TOTAL_IMAGE_COUNT
+#define MAX_KITTY_SCREEN_PLACEMENT_COUNT MAX_TOTAL_IMAGE_COUNT
+#define MAX_KITTY_TOTAL_SOURCE_COUNT MAX_TOTAL_IMAGE_COUNT
+#define MAX_KITTY_TOTAL_PLACEMENT_COUNT MAX_TOTAL_IMAGE_COUNT
 #define MAX_KITTY_IMAGE_BYTES ((size_t)MAX_IMAGE_COUNT * INPUT_BUF_DEFAULT_SIZE)
 #define MAX_KITTY_TOTAL_IMAGE_BYTES \
 	((size_t)MAX_TOTAL_IMAGE_COUNT * INPUT_BUF_DEFAULT_SIZE)
@@ -42,6 +46,12 @@ static u_int		next_kitty_image_id = 0x80000000U;
 static u_int		next_kitty_placement_id = 0x80000000U;
 static u_int		kitty_images_generation;
 static size_t		kitty_images_bytes;
+
+enum image_kitty_limit_type {
+	IMAGE_KITTY_LIMIT_ANY,
+	IMAGE_KITTY_LIMIT_SOURCE,
+	IMAGE_KITTY_LIMIT_PLACEMENT
+};
 #endif
 
 static void		 image_fallback(char **, enum image_type, u_int, u_int);
@@ -227,10 +237,64 @@ image_kitty_has_source(struct screen *s, struct kitty_image *ki)
 	return (image_find_kitty_source(s, ki) != NULL);
 }
 
+static int
+image_is_kitty_source(struct image *im)
+{
+	char	action;
+
+	if (im->type != IMAGE_KITTY)
+		return (0);
+	action = kitty_get_action(im->data.kitty);
+	return (action == 'T' || action == 't');
+}
+
+static int
+image_is_kitty_placement(struct image *im)
+{
+	char	action;
+
+	if (im->type != IMAGE_KITTY || im->hidden)
+		return (0);
+	action = kitty_get_action(im->data.kitty);
+	return (action == 'T' || action == 'p');
+}
+
+static int
+image_kitty_matches_limit(struct image *im, enum image_kitty_limit_type type)
+{
+	if (im->type != IMAGE_KITTY)
+		return (0);
+	switch (type) {
+	case IMAGE_KITTY_LIMIT_SOURCE:
+		return (image_is_kitty_source(im));
+	case IMAGE_KITTY_LIMIT_PLACEMENT:
+		return (image_is_kitty_placement(im));
+	case IMAGE_KITTY_LIMIT_ANY:
+		return (1);
+	}
+	return (0);
+}
+
 u_int
 image_kitty_generation(void)
 {
 	return (kitty_images_generation);
+}
+
+static int
+image_kitty_is_new_source(struct kitty_image *ki)
+{
+	char	action = kitty_get_action(ki);
+
+	return (action == 'T' || action == 't');
+}
+
+static int
+image_kitty_is_new_placement(struct kitty_image *ki, int hidden)
+{
+	char	action = kitty_get_action(ki);
+
+	return (!hidden && (action == 'T' || action == 'p'));
 }
 
 static int
@@ -239,10 +303,7 @@ image_is_kitty_source_referenced(struct image *im)
 	struct image		*other;
 	u_int			 image_id;
 
-	if (im->type != IMAGE_KITTY)
-		return (0);
-	if (kitty_get_action(im->data.kitty) != 'T' &&
-	    kitty_get_action(im->data.kitty) != 't')
+	if (!image_is_kitty_source(im))
 		return (0);
 	image_id = kitty_get_terminal_image_id(im->data.kitty);
 	if (image_id == 0)
@@ -259,45 +320,93 @@ image_is_kitty_source_referenced(struct image *im)
 }
 
 static int
-image_free_oldest_from(struct images *images)
+image_free_oldest_kitty_from(struct images *images,
+    enum image_kitty_limit_type type)
 {
 	struct image	*im;
 
 	TAILQ_FOREACH(im, images, entry) {
-		if (!image_is_kitty_source_referenced(im)) {
+		if (!image_kitty_matches_limit(im, type))
+			continue;
+		if (image_is_kitty_source_referenced(im))
+			continue;
+		image_free(im);
+		return (1);
+	}
+	TAILQ_FOREACH(im, images, entry) {
+		if (image_kitty_matches_limit(im, type)) {
 			image_free(im);
 			return (1);
 		}
 	}
-	if (TAILQ_EMPTY(images))
-		return (0);
-	image_free(TAILQ_FIRST(images));
-	return (1);
+	return (0);
 }
 
 static int
-image_free_oldest_from_screen(struct screen *s)
+image_free_oldest_kitty_from_screen(struct screen *s,
+    enum image_kitty_limit_type type)
 {
-	if (image_free_oldest_from(&s->images))
+	if (image_free_oldest_kitty_from(&s->images, type))
 		return (1);
-	return (image_free_oldest_from(&s->saved_images));
+	return (image_free_oldest_kitty_from(&s->saved_images, type));
 }
 
 static int
-image_free_oldest(void)
+image_free_oldest_kitty(enum image_kitty_limit_type type)
 {
 	struct image	*im;
 
 	TAILQ_FOREACH(im, &all_images, all_entry) {
-		if (!image_is_kitty_source_referenced(im)) {
+		if (!image_kitty_matches_limit(im, type))
+			continue;
+		if (image_is_kitty_source_referenced(im))
+			continue;
+		image_free(im);
+		return (1);
+	}
+	TAILQ_FOREACH(im, &all_images, all_entry) {
+		if (image_kitty_matches_limit(im, type)) {
 			image_free(im);
 			return (1);
 		}
 	}
-	if (TAILQ_EMPTY(&all_images))
-		return (0);
-	image_free(TAILQ_FIRST(&all_images));
-	return (1);
+	return (0);
+}
+
+static int
+image_free_oldest_generic_from(struct images *images)
+{
+	struct image	*im;
+
+	TAILQ_FOREACH(im, images, entry) {
+		if (im->type != IMAGE_KITTY) {
+			image_free(im);
+			return (1);
+		}
+	}
+	return (0);
+}
+
+static int
+image_free_oldest_generic_from_screen(struct screen *s)
+{
+	if (image_free_oldest_generic_from(&s->images))
+		return (1);
+	return (image_free_oldest_generic_from(&s->saved_images));
+}
+
+static int
+image_free_oldest_generic(void)
+{
+	struct image	*im;
+
+	TAILQ_FOREACH(im, &all_images, all_entry) {
+		if (im->type != IMAGE_KITTY) {
+			image_free(im);
+			return (1);
+		}
+	}
+	return (0);
 }
 
 static size_t
@@ -311,6 +420,39 @@ image_kitty_bytes_from(struct images *images)
 			bytes += kitty_size_in_bytes(im->data.kitty);
 	}
 	return (bytes);
+}
+
+static u_int
+image_kitty_count_from(struct images *images, enum image_kitty_limit_type type)
+{
+	struct image	*im;
+	u_int		 count = 0;
+
+	TAILQ_FOREACH(im, images, entry) {
+		if (image_kitty_matches_limit(im, type))
+			count++;
+	}
+	return (count);
+}
+
+static u_int
+image_kitty_count_all(enum image_kitty_limit_type type)
+{
+	struct image	*im;
+	u_int		 count = 0;
+
+	TAILQ_FOREACH(im, &all_images, all_entry) {
+		if (image_kitty_matches_limit(im, type))
+			count++;
+	}
+	return (count);
+}
+
+static u_int
+image_kitty_count_screen(struct screen *s, enum image_kitty_limit_type type)
+{
+	return (image_kitty_count_from(&s->images, type) +
+	    image_kitty_count_from(&s->saved_images, type));
 }
 
 static void
@@ -346,9 +488,37 @@ image_prepare_kitty(struct screen *s, struct kitty_image *ki, int hidden)
 }
 
 static int
-image_kitty_make_room(struct screen *s, struct kitty_image *ki)
+image_kitty_make_room_count(struct screen *s, enum image_kitty_limit_type type,
+    u_int screen_limit, u_int total_limit)
+{
+	while (image_kitty_count_screen(s, type) + 1 > screen_limit) {
+		if (!image_free_oldest_kitty_from_screen(s, type))
+			return (0);
+	}
+	while (image_kitty_count_all(type) + 1 > total_limit) {
+		if (image_free_oldest_kitty_from_screen(s, type))
+			continue;
+		if (!image_free_oldest_kitty(type))
+			return (0);
+	}
+	return (1);
+}
+
+static int
+image_kitty_make_room(struct screen *s, struct kitty_image *ki, int hidden)
 {
 	size_t	bytes, screen_bytes;
+	int	source, placement;
+
+	source = image_kitty_is_new_source(ki);
+	placement = image_kitty_is_new_placement(ki, hidden);
+	if (source && !image_kitty_make_room_count(s, IMAGE_KITTY_LIMIT_SOURCE,
+	    MAX_KITTY_SCREEN_SOURCE_COUNT, MAX_KITTY_TOTAL_SOURCE_COUNT))
+		return (0);
+	if (placement && !image_kitty_make_room_count(s,
+	    IMAGE_KITTY_LIMIT_PLACEMENT, MAX_KITTY_SCREEN_PLACEMENT_COUNT,
+	    MAX_KITTY_TOTAL_PLACEMENT_COUNT))
+		return (0);
 
 	bytes = kitty_size_in_bytes(ki);
 	if (bytes > MAX_KITTY_IMAGE_BYTES)
@@ -356,15 +526,15 @@ image_kitty_make_room(struct screen *s, struct kitty_image *ki)
 	screen_bytes = image_kitty_bytes_from(&s->images) +
 	    image_kitty_bytes_from(&s->saved_images);
 	while (screen_bytes + bytes > MAX_KITTY_IMAGE_BYTES) {
-		if (!image_free_oldest_from_screen(s))
+		if (!image_free_oldest_kitty_from_screen(s, IMAGE_KITTY_LIMIT_ANY))
 			return (0);
 		screen_bytes = image_kitty_bytes_from(&s->images) +
 		    image_kitty_bytes_from(&s->saved_images);
 	}
 	while (kitty_images_bytes + bytes > MAX_KITTY_TOTAL_IMAGE_BYTES) {
-		if (image_free_oldest_from_screen(s))
+		if (image_free_oldest_kitty_from_screen(s, IMAGE_KITTY_LIMIT_ANY))
 			continue;
-		if (!image_free_oldest())
+		if (!image_free_oldest_kitty(IMAGE_KITTY_LIMIT_ANY))
 			return (0);
 	}
 	return (1);
@@ -539,10 +709,30 @@ image_count_from(struct images *images)
 	struct image	*im;
 	u_int		 count = 0;
 
-	TAILQ_FOREACH(im, images, entry)
+	TAILQ_FOREACH(im, images, entry) {
+#ifdef ENABLE_KITTY_IMAGES
+		if (im->type == IMAGE_KITTY)
+			continue;
+#endif
 		count++;
+	}
 	return (count);
 }
+
+#ifdef ENABLE_KITTY_IMAGES
+static u_int
+image_count_all(void)
+{
+	struct image	*im;
+	u_int		 count = 0;
+
+	TAILQ_FOREACH(im, &all_images, all_entry) {
+		if (im->type != IMAGE_KITTY)
+			count++;
+	}
+	return (count);
+}
+#endif
 
 static int
 image_free_all1(struct images *images)
@@ -710,7 +900,7 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 #ifdef ENABLE_KITTY_IMAGES
 	case IMAGE_KITTY:
 		image_prepare_kitty(s, data, hidden);
-		if (!image_kitty_make_room(s, data)) {
+		if (!image_kitty_make_room(s, data, hidden)) {
 			free(im);
 			return (NULL);
 		}
@@ -727,28 +917,30 @@ image_store1(struct screen *s, enum image_type type, void *data, int hidden)
 	if (!hidden)
 		image_fallback(&im->fallback, type, im->sx, im->sy);
 
+#ifdef ENABLE_KITTY_IMAGES
+	if (type != IMAGE_KITTY) {
+		while (image_count_from(&s->images) +
+		    image_count_from(&s->saved_images) + 1 >= MAX_IMAGE_COUNT) {
+			if (!image_free_oldest_generic_from_screen(s))
+				break;
+		}
+		while (image_count_all() + 1 >= MAX_TOTAL_IMAGE_COUNT) {
+			if (!image_free_oldest_generic())
+				break;
+		}
+	}
+#else
 	while (image_count_from(&s->images) + image_count_from(&s->saved_images) +
 	    1 >= MAX_IMAGE_COUNT) {
-#ifdef ENABLE_KITTY_IMAGES
-		if (!image_free_oldest_from_screen(s))
-			break;
-#else
 		if (TAILQ_EMPTY(&s->images))
 			break;
 		image_free(TAILQ_FIRST(&s->images));
-#endif
 	}
 	while (all_images_count + 1 >= MAX_TOTAL_IMAGE_COUNT &&
 	    !TAILQ_EMPTY(&all_images)) {
-#ifdef ENABLE_KITTY_IMAGES
-		if (image_free_oldest_from_screen(s))
-			continue;
-		if (!image_free_oldest())
-			break;
-#else
 		image_free(TAILQ_FIRST(&all_images));
-#endif
 	}
+#endif
 
 	image_log(im, __func__, NULL);
 	TAILQ_INSERT_TAIL(&s->images, im, entry);

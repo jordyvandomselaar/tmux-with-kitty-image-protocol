@@ -103,7 +103,7 @@ $TMUX -f$CONF new -d \
     "printf '\033_Ga=T,t=d,f=100;$INTERLACED_PNG_1X1\033\\\\after-interlaced-png\n'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
-[ "$(awk '/after-interlaced-png/ { print NR; exit }' $TMP)" = 1 ] || exit 1
+[ "$(awk '/after-interlaced-png/ { print NR; exit }' $TMP)" = 2 ] || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \

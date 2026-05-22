@@ -1844,6 +1844,54 @@ tty_keys_kitty_graphics_is_probe(const char *tmp)
 	return (0);
 }
 
+static int
+tty_keys_kitty_graphics_get_uint(const char *tmp, char key, u_int *value)
+{
+	const char	*p = tmp, *semi, *end, *eq, *errstr;
+	char		 s[32];
+	size_t		 len;
+
+	if ((semi = strchr(tmp, ';')) == NULL)
+		return (0);
+	while (p < semi) {
+		end = memchr(p, ',', semi - p);
+		if (end == NULL)
+			end = semi;
+		eq = memchr(p, '=', end - p);
+		if (eq != NULL && eq == p + 1 && *p == key) {
+			len = end - eq - 1;
+			if (len == 0 || len >= sizeof s)
+				return (0);
+			memcpy(s, eq + 1, len);
+			s[len] = '\0';
+			*value = strtonum(s, 0, UINT_MAX, &errstr);
+			return (errstr == NULL);
+		}
+		p = end + 1;
+	}
+	return (0);
+}
+
+static int
+tty_keys_kitty_graphics_is_owned(struct tty *tty, const char *tmp)
+{
+	struct tty_kitty_image	*ki;
+	u_int			 image_id, placement_id = 0;
+	int			 has_placement;
+
+	if (!tty_keys_kitty_graphics_get_uint(tmp, 'i', &image_id))
+		return (0);
+	has_placement = tty_keys_kitty_graphics_get_uint(tmp, 'p', &placement_id);
+
+	TAILQ_FOREACH(ki, &tty->kitty_images, entry) {
+		if (ki->image_id != image_id)
+			continue;
+		if (!has_placement || ki->placement_id == placement_id)
+			return (1);
+	}
+	return (0);
+}
+
 /*
  * Handle kitty graphics protocol response from outer terminal.
  * Format: ESC _ G <key=value,...> ; <message> ESC \
@@ -1863,9 +1911,6 @@ tty_keys_kitty_graphics(struct tty *tty, const char *buf, size_t len,
 	char		 tmp[256];
 
 	*size = 0;
-	if (~tty->flags & TTY_WAITKITTY)
-		return (-1);
-
 	/*
 	 * Kitty APC response starts with ESC _ G (3 bytes).
 	 * The 8-bit C1 equivalent 0x9f could also be used but is rare.
@@ -1898,7 +1943,12 @@ tty_keys_kitty_graphics(struct tty *tty, const char *buf, size_t len,
 		return (-1); /* too long, not a valid response */
 
 	log_debug("%s: kitty graphics response: %s", c->name, tmp);
-	if (!tty_keys_kitty_graphics_is_probe(tmp))
+	if (!tty_keys_kitty_graphics_is_probe(tmp)) {
+		if (tty_keys_kitty_graphics_is_owned(tty, tmp))
+			return (0);
+		return (-1);
+	}
+	if (~tty->flags & TTY_WAITKITTY)
 		return (-1);
 	tty->flags &= ~TTY_WAITKITTY;
 

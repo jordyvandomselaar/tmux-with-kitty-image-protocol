@@ -1496,6 +1496,35 @@ tty_check_overlay_range(struct tty *tty, u_int px, u_int py, u_int nx)
 }
 
 #ifdef ENABLE_IMAGES
+static int
+tty_check_overlay_area(struct tty *tty, u_int px, u_int py, u_int nx, u_int ny)
+{
+	struct visible_ranges	*r;
+	struct visible_range	*rr;
+	u_int			 yy, i, end, covered;
+
+	if (nx == 0 || ny == 0)
+		return (0);
+	for (yy = py; yy < py + ny; yy++) {
+		r = tty_check_overlay_range(tty, px, yy, nx);
+		end = px + nx;
+		covered = px;
+		for (i = 0; i < r->used; i++) {
+			rr = &r->ranges[i];
+			if (rr->nx == 0 || rr->px + rr->nx <= covered)
+				continue;
+			if (rr->px > covered)
+				return (0);
+			covered = rr->px + rr->nx;
+			if (covered >= end)
+				break;
+		}
+		if (covered < end)
+			return (0);
+	}
+	return (1);
+}
+
 /* Update context for client. */
 int
 tty_set_client_cb(struct tty_ctx *ttyctx, struct client *c)
@@ -2306,6 +2335,8 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 		if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y,
 		    &rx, &ry))
 			return;
+		if (!tty_check_overlay_area(tty, x, y, rx, ry))
+			return;
 		data = xstrdup(im->fallback);
 		size = strlen(data);
 	} else {
@@ -2313,6 +2344,8 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 		sy = im->sy;
 		if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y,
 		    &rx, &ry))
+			return;
+		if (!tty_check_overlay_area(tty, x, y, rx, ry))
 			return;
 		clipped = (im->kitty_xoff != 0 || im->kitty_yoff != 0 ||
 		    i != 0 || j != 0 || rx != sx || ry != sy);

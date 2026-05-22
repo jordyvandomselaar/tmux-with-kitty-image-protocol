@@ -382,6 +382,53 @@ kitty_png_expected_size(u_int width, u_int height, u_int bit_depth,
 }
 
 static int
+kitty_png_adam7_expected_size(u_int width, u_int height, u_int bit_depth,
+    u_int color_type, uint64_t *expected)
+{
+	static const u_int	xstart[7] = { 0, 4, 0, 2, 0, 1, 0 };
+	static const u_int	ystart[7] = { 0, 0, 4, 0, 2, 0, 1 };
+	static const u_int	xstep[7] = { 8, 8, 4, 4, 2, 2, 1 };
+	static const u_int	ystep[7] = { 8, 8, 8, 4, 4, 2, 2 };
+	uint64_t	 samples, rows, cols, row_bits, row_bytes, total = 0;
+	u_int		 i;
+
+	if (width == 0 || height == 0)
+		return (0);
+	samples = kitty_png_samples_per_pixel(color_type);
+	for (i = 0; i < nitems(xstart); i++) {
+		if (width <= xstart[i] || height <= ystart[i])
+			continue;
+		cols = (width - xstart[i] + xstep[i] - 1) / xstep[i];
+		rows = (height - ystart[i] + ystep[i] - 1) / ystep[i];
+		if (cols > UINT64_MAX / samples / bit_depth)
+			return (0);
+		row_bits = cols * samples * bit_depth;
+		if (row_bits > UINT64_MAX - 7)
+			return (0);
+		row_bytes = (row_bits + 7) / 8 + 1;
+		if (row_bytes > UINT64_MAX / rows)
+			return (0);
+		if (total > UINT64_MAX - (row_bytes * rows))
+			return (0);
+		total += row_bytes * rows;
+	}
+	*expected = total;
+	return (1);
+}
+
+static int
+kitty_png_image_data_size(u_int width, u_int height, u_int bit_depth,
+    u_int color_type, u_int interlace, uint64_t *expected)
+{
+	if (interlace == 0) {
+		return (kitty_png_expected_size(width, height, bit_depth,
+		    color_type, expected));
+	}
+	return (kitty_png_adam7_expected_size(width, height, bit_depth,
+	    color_type, expected));
+}
+
+static int
 kitty_png_validate_idat(const u_char *idat, size_t idatlen, uint64_t expected)
 {
 	u_char		 out[4096];
@@ -488,7 +535,7 @@ kitty_validate_png_payload(struct kitty_image *ki, u_char *out, size_t outlen)
 			filter = data[11];
 			interlace = data[12];
 			if (width == 0 || height == 0 || compression != 0 ||
-			    filter != 0 || interlace != 0)
+			    filter != 0 || interlace > 1)
 				goto out;
 			if (!kitty_png_bit_depth_valid(bit_depth, color_type))
 				goto out;
@@ -530,8 +577,8 @@ kitty_validate_png_payload(struct kitty_image *ki, u_char *out, size_t outlen)
 		goto out;
 	if (color_type == 3 && !seen_plte)
 		goto out;
-	if (!kitty_png_expected_size(width, height, bit_depth, color_type,
-	    &expected))
+	if (!kitty_png_image_data_size(width, height, bit_depth, color_type,
+	    interlace, &expected))
 		goto out;
 	if (!kitty_png_validate_idat(idat, idatlen, expected))
 		goto out;
@@ -1222,10 +1269,10 @@ kitty_print_clipped(struct kitty_image *ki, u_int xoff, u_int yoff,
 	u_int				 sx, sy, source_x, source_y;
 	u_int				 source_w, source_h;
 	uint64_t			 left, right, top, bottom;
+	uint64_t			 display_w, display_h, crop_left, crop_right;
+	uint64_t			 crop_top, crop_bottom;
 
 	if (ki == NULL || cellsx == 0 || cellsy == 0)
-		return (NULL);
-	if (ki->cell_x != 0 || ki->cell_y != 0)
 		return (NULL);
 
 	kitty_update_png_size(ki);
@@ -1255,10 +1302,43 @@ kitty_print_clipped(struct kitty_image *ki, u_int xoff, u_int yoff,
 	if (source_w == 0 || source_h == 0)
 		return (NULL);
 
-	left = source_x + ((uint64_t)source_w * xoff) / sx;
-	right = source_x + ((uint64_t)source_w * (xoff + cellsx)) / sx;
-	top = source_y + ((uint64_t)source_h * yoff) / sy;
-	bottom = source_y + ((uint64_t)source_h * (yoff + cellsy)) / sy;
+	if (ki->cell_x != 0 || ki->cell_y != 0) {
+		if (ki->xpixel == 0 || ki->ypixel == 0)
+			return (NULL);
+		display_w = (uint64_t)sx * ki->xpixel;
+		display_h = (uint64_t)sy * ki->ypixel;
+		if (display_w == 0 || display_h == 0)
+			return (NULL);
+
+		crop_left = (uint64_t)xoff * ki->xpixel;
+		crop_right = (uint64_t)(xoff + cellsx) * ki->xpixel;
+		crop_top = (uint64_t)yoff * ki->ypixel;
+		crop_bottom = (uint64_t)(yoff + cellsy) * ki->ypixel;
+		if (crop_right <= ki->cell_x || crop_bottom <= ki->cell_y)
+			return (NULL);
+		crop_left = (crop_left <= ki->cell_x) ? 0 : crop_left - ki->cell_x;
+		crop_right -= ki->cell_x;
+		crop_top = (crop_top <= ki->cell_y) ? 0 : crop_top - ki->cell_y;
+		crop_bottom -= ki->cell_y;
+		if (crop_left >= display_w || crop_top >= display_h)
+			return (NULL);
+		if (crop_right > display_w)
+			crop_right = display_w;
+		if (crop_bottom > display_h)
+			crop_bottom = display_h;
+		if (crop_right <= crop_left || crop_bottom <= crop_top)
+			return (NULL);
+
+		left = source_x + ((uint64_t)source_w * crop_left) / display_w;
+		right = source_x + ((uint64_t)source_w * crop_right) / display_w;
+		top = source_y + ((uint64_t)source_h * crop_top) / display_h;
+		bottom = source_y + ((uint64_t)source_h * crop_bottom) / display_h;
+	} else {
+		left = source_x + ((uint64_t)source_w * xoff) / sx;
+		right = source_x + ((uint64_t)source_w * (xoff + cellsx)) / sx;
+		top = source_y + ((uint64_t)source_h * yoff) / sy;
+		bottom = source_y + ((uint64_t)source_h * (yoff + cellsy)) / sy;
+	}
 	if (right <= left || bottom <= top)
 		return (NULL);
 

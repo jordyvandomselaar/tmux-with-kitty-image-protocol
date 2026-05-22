@@ -2306,7 +2306,7 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 	struct image		*im = ctx->ptr;
 	char			*data;
 	size_t			 size;
-	u_int			 cx = ctx->ocx, cy = ctx->ocy, sx, sy;
+	u_int			 cx = ctx->ocx, cy = ctx->ocy, sx, sy, ksx, ksy;
 	u_int			 i, j, x, y, rx, ry;
 	int			 fallback = 0, clipped, sent_kitty = 0;
 
@@ -2342,13 +2342,15 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 	} else {
 		sx = im->sx;
 		sy = im->sy;
+		kitty_size_in_cells(im->data.kitty, &ksx, &ksy);
 		if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y,
 		    &rx, &ry))
 			return;
 		if (!tty_check_overlay_area(tty, x, y, rx, ry))
 			return;
 		clipped = (im->kitty_xoff != 0 || im->kitty_yoff != 0 ||
-		    i != 0 || j != 0 || rx != sx || ry != sy);
+		    i != 0 || j != 0 || rx != sx || ry != sy || sx != ksx ||
+		    sy != ksy);
 		if (!clipped) {
 			/* Re-serialize for redraw without moving the terminal cursor. */
 			data = kitty_print_redraw(im->data.kitty, &size);

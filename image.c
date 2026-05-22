@@ -1037,11 +1037,145 @@ image_store_kitty_upload(struct screen *s, struct kitty_image *ki)
 	return (image_store1(s, IMAGE_KITTY, ki, 1));
 }
 
+struct image_kitty_segment {
+	u_int		 yoff;
+	u_int		 py;
+	u_int		 sy;
+};
+
+static void
+image_kitty_add_segment(struct image_kitty_segment *segments, u_int *n,
+    uint64_t yoff, uint64_t py, uint64_t sy)
+{
+	if (sy == 0)
+		return;
+	segments[*n].yoff = yoff;
+	segments[*n].py = py;
+	segments[*n].sy = sy;
+	(*n)++;
+}
+
+static void
+image_kitty_set_segment(struct image *im, u_int yoff, u_int py, u_int sy)
+{
+	im->kitty_yoff = yoff;
+	im->py = py;
+	im->sy = sy;
+	free(im->fallback);
+	image_fallback(&im->fallback, im->type, im->sx, im->sy);
+}
+
+static struct image *
+image_kitty_clone_segment(struct image *im, struct image *after, u_int yoff,
+    u_int py, u_int sy)
+{
+	struct image		*new;
+	struct kitty_image	*ki;
+
+	ki = kitty_clone_as_placement(im->data.kitty);
+	kitty_set_terminal_placement_id(ki,
+	    image_next_kitty_id(&next_kitty_placement_id));
+
+	new = xcalloc(1, sizeof *new);
+	new->type = IMAGE_KITTY;
+	new->s = im->s;
+	new->images = im->images;
+	new->data.kitty = ki;
+	new->fallback_hidden = im->fallback_hidden;
+	new->px = im->px;
+	new->sx = im->sx;
+	new->kitty_xoff = im->kitty_xoff;
+	image_kitty_set_segment(new, yoff, py, sy);
+
+	image_log(new, __func__, NULL);
+	TAILQ_INSERT_AFTER(im->images, after, new, entry);
+	TAILQ_INSERT_TAIL(&all_images, new, all_entry);
+	kitty_images_bytes += kitty_size_in_bytes(ki);
+	all_images_count++;
+	return (new);
+}
+
+static void
+image_kitty_apply_segments(struct image *im,
+    struct image_kitty_segment *segments, u_int n)
+{
+	struct image	*after = im;
+	u_int	base_yoff = im->kitty_yoff, i;
+
+	if (n == 0) {
+		image_free(im);
+		return;
+	}
+	for (i = 1; i < n; i++) {
+		after = image_kitty_clone_segment(im, after,
+		    base_yoff + segments[i].yoff, segments[i].py,
+		    segments[i].sy);
+	}
+	image_kitty_set_segment(im, base_yoff + segments[0].yoff,
+	    segments[0].py, segments[0].sy);
+}
+
+static u_int
+image_kitty_insert_segments(struct image_kitty_segment *segments,
+    uint64_t itop, uint64_t ibottom, u_int py, u_int ny,
+    uint64_t region_end)
+{
+	uint64_t	a, b, new_top, visible;
+	u_int		n = 0;
+
+	if (itop < py) {
+		b = (ibottom < py) ? ibottom : py;
+		image_kitty_add_segment(segments, &n, 0, itop, b - itop);
+	}
+	a = (itop > py) ? itop : py;
+	b = (ibottom < region_end) ? ibottom : region_end;
+	if (a < b) {
+		new_top = a + ny;
+		if (new_top < region_end) {
+			visible = b - a;
+			if (visible > region_end - new_top)
+				visible = region_end - new_top;
+			image_kitty_add_segment(segments, &n, a - itop, new_top,
+			    visible);
+		}
+	}
+	if (ibottom > region_end) {
+		a = (itop > region_end) ? itop : region_end;
+		image_kitty_add_segment(segments, &n, a - itop, a, ibottom - a);
+	}
+	return (n);
+}
+
+static u_int
+image_kitty_delete_segments(struct image_kitty_segment *segments,
+    uint64_t itop, uint64_t ibottom, u_int py, u_int ny,
+    uint64_t region_end)
+{
+	uint64_t	a, b, delete_end = (uint64_t)py + ny;
+	u_int		n = 0;
+
+	if (itop < py) {
+		b = (ibottom < py) ? ibottom : py;
+		image_kitty_add_segment(segments, &n, 0, itop, b - itop);
+	}
+	a = (itop > delete_end) ? itop : delete_end;
+	b = (ibottom < region_end) ? ibottom : region_end;
+	if (a < b)
+		image_kitty_add_segment(segments, &n, a - itop, a - ny, b - a);
+	if (ibottom > region_end) {
+		a = (itop > region_end) ? itop : region_end;
+		image_kitty_add_segment(segments, &n, a - itop, a, ibottom - a);
+	}
+	return (n);
+}
+
 int
 image_kitty_insert_lines(struct screen *s, u_int py, u_int ny, u_int bottom)
 {
 	struct image	*im, *im1;
-	uint64_t	 itop, ibottom, region_end, new_top, new_bottom, visible;
+	uint64_t	 itop, ibottom, region_end;
+	struct image_kitty_segment segments[3];
+	u_int		 n;
 	int		 redraw = 0;
 
 	if (ny == 0 || py > bottom)
@@ -1060,34 +1194,9 @@ image_kitty_insert_lines(struct screen *s, u_int py, u_int ny, u_int bottom)
 		image_log(im, __func__, "py=%u, ny=%u, bottom=%u", py, ny,
 		    bottom);
 
-		if (itop < py || ibottom > region_end) {
-			image_free(im);
-			redraw = 1;
-			continue;
-		}
-
-		new_top = itop + ny;
-		if (new_top >= region_end) {
-			image_free(im);
-			redraw = 1;
-			continue;
-		}
-		new_bottom = ibottom + ny;
-		if (new_bottom > region_end) {
-			visible = region_end - new_top;
-			if (visible == 0) {
-				image_free(im);
-				redraw = 1;
-				continue;
-			}
-			im->py += ny;
-			im->sy = visible;
-			free(im->fallback);
-			image_fallback(&im->fallback, im->type, im->sx, im->sy);
-			redraw = 1;
-			continue;
-		}
-		im->py += ny;
+		n = image_kitty_insert_segments(segments, itop, ibottom, py, ny,
+		    region_end);
+		image_kitty_apply_segments(im, segments, n);
 		redraw = 1;
 	}
 	return (redraw);
@@ -1097,14 +1206,15 @@ int
 image_kitty_delete_lines(struct screen *s, u_int py, u_int ny, u_int bottom)
 {
 	struct image	*im, *im1;
-	uint64_t	 itop, ibottom, delete_end, region_end, removed;
+	uint64_t	 itop, ibottom, region_end;
+	struct image_kitty_segment segments[3];
+	u_int		 n;
 	int		 redraw = 0;
 
 	if (ny == 0 || py > bottom)
 		return (0);
 	if (ny > bottom + 1 - py)
 		ny = bottom + 1 - py;
-	delete_end = (uint64_t)py + ny;
 	region_end = (uint64_t)bottom + 1;
 
 	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
@@ -1117,27 +1227,9 @@ image_kitty_delete_lines(struct screen *s, u_int py, u_int ny, u_int bottom)
 		image_log(im, __func__, "py=%u, ny=%u, bottom=%u", py, ny,
 		    bottom);
 
-		if (ibottom > region_end || itop < py) {
-			image_free(im);
-			redraw = 1;
-			continue;
-		}
-		if (itop < delete_end) {
-			removed = delete_end - itop;
-			if (removed >= im->sy) {
-				image_free(im);
-				redraw = 1;
-				continue;
-			}
-			im->kitty_yoff += removed;
-			im->sy -= removed;
-			im->py = py;
-			free(im->fallback);
-			image_fallback(&im->fallback, im->type, im->sx, im->sy);
-			redraw = 1;
-			continue;
-		}
-		im->py -= ny;
+		n = image_kitty_delete_segments(segments, itop, ibottom, py, ny,
+		    region_end);
+		image_kitty_apply_segments(im, segments, n);
 		redraw = 1;
 	}
 	return (redraw);
@@ -1259,7 +1351,11 @@ image_scroll_up_region(struct screen *s, u_int lines, u_int top, u_int bottom)
 	struct sixel_image	*new;
 	u_int			 sx;
 #endif
-#if defined(ENABLE_SIXEL) || defined(ENABLE_KITTY_IMAGES)
+#ifdef ENABLE_KITTY_IMAGES
+	struct image_kitty_segment segments[3];
+	u_int			 n;
+#endif
+#ifdef ENABLE_SIXEL
 	u_int			 removed, sy;
 #endif
 
@@ -1279,6 +1375,15 @@ image_scroll_up_region(struct screen *s, u_int lines, u_int top, u_int bottom)
 			continue;
 		image_log(im, __func__, "lines=%u, top=%u, bottom=%u", lines,
 		    top, bottom);
+#ifdef ENABLE_KITTY_IMAGES
+		if (im->type == IMAGE_KITTY) {
+			n = image_kitty_delete_segments(segments, itop, ibottom, top,
+			    lines, region_end);
+			image_kitty_apply_segments(im, segments, n);
+			redraw = 1;
+			continue;
+		}
+#endif
 		if (itop < top || ibottom > region_end) {
 			image_free(im);
 			redraw = 1;
@@ -1295,11 +1400,11 @@ image_scroll_up_region(struct screen *s, u_int lines, u_int top, u_int bottom)
 			continue;
 		}
 
-		/* Image is partially scrolled off - need to crop it */
+#ifdef ENABLE_SIXEL
+		/* Image is partially scrolled off - need to crop it. */
 		sy = ibottom - delete_end;
 		removed = im->sy - sy;
 		switch (im->type) {
-#ifdef ENABLE_SIXEL
 		case IMAGE_SIXEL:
 			sx = im->sx;
 			image_log(im, __func__, "sixel, lines=%u, sy=%u", lines,
@@ -1317,21 +1422,10 @@ image_scroll_up_region(struct screen *s, u_int lines, u_int top, u_int bottom)
 			image_fallback(&im->fallback, im->type, im->sx, im->sy);
 			redraw = 1;
 			break;
-#endif
-#ifdef ENABLE_KITTY_IMAGES
-		case IMAGE_KITTY:
-			im->kitty_yoff += removed;
-			im->py = top;
-			im->sy = sy;
-
-			free(im->fallback);
-			image_fallback(&im->fallback, im->type, im->sx, im->sy);
-			redraw = 1;
-			break;
-#endif
 		default:
 			break;
 		}
+#endif
 	}
 	return (redraw);
 }

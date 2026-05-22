@@ -24,10 +24,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>
 
 #include "tmux.h"
 
 #define KITTY_CHUNK_LIMIT 4096
+#define KITTY_INFLATE_LIMIT INPUT_BUF_DEFAULT_SIZE
 #define KITTY_PNG_HEADER_SIZE 24
 #define KITTY_QUIET_SUPPRESS_RESPONSES 2
 #define KITTY_QUIET_UNCHANGED ((u_int)-1)
@@ -222,23 +224,93 @@ kitty_parse_control(const char *ctrl, size_t ctrllen, struct kitty_image *ki)
 }
 
 static int
+kitty_inflate_payload(const u_char *in, size_t inlen, u_char **out,
+    size_t *outlen)
+{
+	z_stream	 zs;
+	size_t		 cap;
+	int		 ret;
+
+	if (inlen == 0 || inlen > UINT_MAX)
+		return (0);
+
+	cap = inlen * 2;
+	if (cap < 4096)
+		cap = 4096;
+	if (cap > KITTY_INFLATE_LIMIT)
+		cap = KITTY_INFLATE_LIMIT;
+
+	*out = xmalloc(cap);
+	*outlen = 0;
+
+	memset(&zs, 0, sizeof zs);
+	zs.next_in = (Bytef *)in;
+	zs.avail_in = (uInt)inlen;
+	if (inflateInit(&zs) != Z_OK)
+		goto fail;
+
+	for (;;) {
+		zs.next_out = *out + *outlen;
+		zs.avail_out = (uInt)(cap - *outlen);
+		ret = inflate(&zs, Z_NO_FLUSH);
+		*outlen = cap - zs.avail_out;
+
+		if (ret == Z_STREAM_END) {
+			inflateEnd(&zs);
+			return (1);
+		}
+		if (ret != Z_OK)
+			break;
+		if (*outlen == KITTY_INFLATE_LIMIT)
+			break;
+		if (*outlen == cap) {
+			cap *= 2;
+			if (cap > KITTY_INFLATE_LIMIT)
+				cap = KITTY_INFLATE_LIMIT;
+			*out = xrealloc(*out, cap);
+		}
+	}
+
+	inflateEnd(&zs);
+
+fail:
+	free(*out);
+	*out = NULL;
+	*outlen = 0;
+	return (0);
+}
+
+static int
 kitty_decode_payload(struct kitty_image *ki, u_char **out, size_t *outlen)
 {
+	u_char	*decoded_data;
 	size_t	 size;
-	int	 decoded;
+	int	 decoded_len;
 
 	if (ki->encoded == NULL || ki->encodedlen == 0)
 		return (0);
 
 	size = ((ki->encodedlen + 3) / 4) * 3;
-	*out = xmalloc(size);
-	decoded = b64_pton(ki->encoded, *out, size);
-	if (decoded == -1) {
-		free(*out);
-		*out = NULL;
+	decoded_data = xmalloc(size);
+	decoded_len = b64_pton(ki->encoded, decoded_data, size);
+	if (decoded_len == -1) {
+		free(decoded_data);
 		return (0);
 	}
-	*outlen = decoded;
+	if (ki->compression == '\0') {
+		*out = decoded_data;
+		*outlen = decoded_len;
+		return (1);
+	}
+	if (ki->compression != 'z') {
+		free(decoded_data);
+		return (0);
+	}
+	if (!kitty_inflate_payload(decoded_data, decoded_len, out, outlen)) {
+		free(decoded_data);
+		return (0);
+	}
+	free(decoded_data);
 	return (1);
 }
 
@@ -430,8 +502,6 @@ kitty_validate_payload(struct kitty_image *ki)
 		return (1);
 	if (ki->medium != 'd')
 		return (1);
-	if (ki->compression != '\0')
-		return (0);
 	if (!kitty_decode_payload(ki, &out, &outlen))
 		return (0);
 

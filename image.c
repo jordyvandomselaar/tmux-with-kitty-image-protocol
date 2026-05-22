@@ -18,6 +18,7 @@
 
 #include <sys/types.h>
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -564,6 +565,118 @@ struct image*
 image_store_kitty_upload(struct screen *s, struct kitty_image *ki)
 {
 	return (image_store1(s, IMAGE_KITTY, ki, 1));
+}
+
+int
+image_kitty_insert_lines(struct screen *s, u_int py, u_int ny, u_int bottom)
+{
+	struct image	*im, *im1;
+	uint64_t	 itop, ibottom, region_end, new_top, new_bottom, visible;
+	int		 redraw = 0;
+
+	if (ny == 0 || py > bottom)
+		return (0);
+	if (ny > bottom + 1 - py)
+		ny = bottom + 1 - py;
+	region_end = (uint64_t)bottom + 1;
+
+	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
+		if (im->type != IMAGE_KITTY || im->hidden || im->sy == 0)
+			continue;
+		itop = im->py;
+		ibottom = (uint64_t)im->py + im->sy;
+		if (ibottom <= py || itop >= region_end)
+			continue;
+		image_log(im, __func__, "py=%u, ny=%u, bottom=%u", py, ny,
+		    bottom);
+
+		if (itop < py || ibottom > region_end) {
+			image_free(im);
+			redraw = 1;
+			continue;
+		}
+
+		new_top = itop + ny;
+		if (new_top >= region_end) {
+			image_free(im);
+			redraw = 1;
+			continue;
+		}
+		new_bottom = ibottom + ny;
+		if (new_bottom > region_end) {
+			visible = region_end - new_top;
+			if (visible == 0) {
+				image_free(im);
+				redraw = 1;
+				continue;
+			}
+			im->py += ny;
+			im->sy = visible;
+			free(im->fallback);
+			image_fallback(&im->fallback, im->type, im->sx, im->sy);
+			redraw = 1;
+			continue;
+		}
+		im->py += ny;
+		redraw = 1;
+	}
+	return (redraw);
+}
+
+int
+image_kitty_delete_lines(struct screen *s, u_int py, u_int ny, u_int bottom)
+{
+	struct image	*im, *im1;
+	uint64_t	 itop, ibottom, delete_end, region_end, removed;
+	int		 redraw = 0;
+
+	if (ny == 0 || py > bottom)
+		return (0);
+	if (ny > bottom + 1 - py)
+		ny = bottom + 1 - py;
+	delete_end = (uint64_t)py + ny;
+	region_end = (uint64_t)bottom + 1;
+
+	TAILQ_FOREACH_SAFE(im, &s->images, entry, im1) {
+		if (im->type != IMAGE_KITTY || im->hidden || im->sy == 0)
+			continue;
+		itop = im->py;
+		ibottom = (uint64_t)im->py + im->sy;
+		if (ibottom <= py || itop >= region_end)
+			continue;
+		image_log(im, __func__, "py=%u, ny=%u, bottom=%u", py, ny,
+		    bottom);
+
+		if (ibottom > region_end || itop < py) {
+			image_free(im);
+			redraw = 1;
+			continue;
+		}
+		if (itop < delete_end) {
+			removed = delete_end - itop;
+			if (removed >= im->sy) {
+				image_free(im);
+				redraw = 1;
+				continue;
+			}
+			im->kitty_yoff += removed;
+			im->sy -= removed;
+			im->py = py;
+			free(im->fallback);
+			image_fallback(&im->fallback, im->type, im->sx, im->sy);
+			redraw = 1;
+			continue;
+		}
+		im->py -= ny;
+		redraw = 1;
+	}
+	return (redraw);
+}
+
+int
+image_kitty_scroll_down(struct screen *s, u_int lines)
+{
+	return (image_kitty_insert_lines(s, s->rupper, lines, s->rlower));
 }
 #endif
 

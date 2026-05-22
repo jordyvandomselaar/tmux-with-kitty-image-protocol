@@ -1218,6 +1218,12 @@ screen_write_insertline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		if (ny == 0)
 			return;
 
+#ifdef ENABLE_KITTY_IMAGES
+		if (image_kitty_insert_lines(s, s->cy, ny, sy - 1) &&
+		    ctx->wp != NULL)
+			ctx->wp->flags |= PANE_REDRAW;
+#endif
+
 		screen_write_initctx(ctx, &ttyctx, 1);
 		ttyctx.bg = bg;
 
@@ -1233,6 +1239,12 @@ screen_write_insertline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		ny = s->rlower + 1 - s->cy;
 	if (ny == 0)
 		return;
+
+#ifdef ENABLE_KITTY_IMAGES
+	if (image_kitty_insert_lines(s, s->cy, ny, s->rlower) &&
+	    ctx->wp != NULL)
+		ctx->wp->flags |= PANE_REDRAW;
+#endif
 
 	screen_write_initctx(ctx, &ttyctx, 1);
 	ttyctx.bg = bg;
@@ -1271,6 +1283,12 @@ screen_write_deleteline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		if (ny == 0)
 			return;
 
+#ifdef ENABLE_KITTY_IMAGES
+		if (image_kitty_delete_lines(s, s->cy, ny, sy - 1) &&
+		    ctx->wp != NULL)
+			ctx->wp->flags |= PANE_REDRAW;
+#endif
+
 		screen_write_initctx(ctx, &ttyctx, 1);
 		ttyctx.bg = bg;
 
@@ -1286,6 +1304,12 @@ screen_write_deleteline(struct screen_write_ctx *ctx, u_int ny, u_int bg)
 		ny = s->rlower + 1 - s->cy;
 	if (ny == 0)
 		return;
+
+#ifdef ENABLE_KITTY_IMAGES
+	if (image_kitty_delete_lines(s, s->cy, ny, s->rlower) &&
+	    ctx->wp != NULL)
+		ctx->wp->flags |= PANE_REDRAW;
+#endif
 
 	screen_write_initctx(ctx, &ttyctx, 1);
 	ttyctx.bg = bg;
@@ -1550,7 +1574,11 @@ screen_write_scrolldown(struct screen_write_ctx *ctx, u_int lines, u_int bg)
 		lines = s->rlower - s->rupper + 1;
 
 #ifdef ENABLE_IMAGES
-	if (image_free_all(s) && ctx->wp != NULL)
+	if (image_check_line(s, 0, screen_size_y(s)) && ctx->wp != NULL)
+		ctx->wp->flags |= PANE_REDRAW;
+#endif
+#ifdef ENABLE_KITTY_IMAGES
+	if (image_kitty_scroll_down(s, lines) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 

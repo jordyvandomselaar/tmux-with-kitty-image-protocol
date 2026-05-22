@@ -487,6 +487,8 @@ AC_ARG_ENABLE(
 	AS_HELP_STRING(--enable-kitty-images, enable kitty terminal graphics)
 )
 if test "x$enable_kitty_images" = xyes; then
+	AC_CHECK_HEADER(zlib.h, , AC_MSG_ERROR("zlib not found"))
+	AC_SEARCH_LIBS(inflate, z, , AC_MSG_ERROR("zlib not found"))
 	AC_DEFINE(ENABLE_KITTY_IMAGES)
 fi
 AM_CONDITIONAL(ENABLE_KITTY_IMAGES, [test "x$enable_kitty_images" = xyes])

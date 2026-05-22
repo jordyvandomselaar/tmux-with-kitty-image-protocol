@@ -55,12 +55,20 @@ $TMUX capturep -pS0 >$TMP || exit 1
 tr -s '[:space:]' ' ' <$TMP | grep -q '4f 4b' || exit 1
 
 PNG_1X1='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='
+ZLIB_RGB_1X1='eJxjYGAAAAADAAE='
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d \
     "printf '\033_Ga=T,t=d,f=100;$PNG_1X1\033\\\\after-png\n'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-png/ { print NR; exit }' $TMP)" = 2 ] || exit 1
+
+$TMUX kill-server 2>/dev/null
+$TMUX -f$CONF new -d \
+    "printf '\033_Ga=T,t=d,o=z,f=24,s=1,v=1,c=1,r=1;$ZLIB_RGB_1X1\033\\\\after-zlib\n'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+[ "$(awk '/after-zlib/ { print NR; exit }' $TMP)" = 2 ] || exit 1
 
 $TMUX kill-server 2>/dev/null
 $TMUX -f$CONF new -d \

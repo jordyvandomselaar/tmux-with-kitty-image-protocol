@@ -3872,6 +3872,9 @@ struct image	*image_store_kitty_upload(struct screen *,
 		     struct kitty_image *);
 int		 image_kitty_has_source(struct screen *, struct kitty_image *);
 u_int		 image_kitty_generation(void);
+int		 image_kitty_insert_lines(struct screen *, u_int, u_int, u_int);
+int		 image_kitty_delete_lines(struct screen *, u_int, u_int, u_int);
+int		 image_kitty_scroll_down(struct screen *, u_int);
 #endif
 int		 image_check_line(struct screen *, u_int, u_int);
 int		 image_check_area(struct screen *, u_int, u_int, u_int, u_int);

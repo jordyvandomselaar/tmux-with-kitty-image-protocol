@@ -1112,7 +1112,7 @@ screen_write_insertcharacter(struct screen_write_ctx *ctx, u_int nx, u_int bg)
 		return;
 
 #ifdef ENABLE_IMAGES
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (image_check_text_line(s, s->cy, 1) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1145,7 +1145,7 @@ screen_write_deletecharacter(struct screen_write_ctx *ctx, u_int nx, u_int bg)
 		return;
 
 #ifdef ENABLE_IMAGES
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (image_check_text_line(s, s->cy, 1) && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1178,7 +1178,8 @@ screen_write_clearcharacter(struct screen_write_ctx *ctx, u_int nx, u_int bg)
 		return;
 
 #ifdef ENABLE_IMAGES
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (image_check_text_area(s, s->cx, s->cy, nx, 1) &&
+	    ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1332,13 +1333,25 @@ screen_write_clearline(struct screen_write_ctx *ctx, u_int bg)
 	struct grid_line		*gl;
 	u_int				 sx = screen_size_x(s);
 	struct screen_write_citem	*ci = ctx->item;
-
-	gl = grid_get_line(s->grid, s->grid->hsize + s->cy);
-	if (gl->cellsize == 0 && COLOUR_DEFAULT(bg))
-		return;
+#ifdef ENABLE_IMAGES
+	int				 redraw;
+#endif
 
 #ifdef ENABLE_IMAGES
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	redraw = image_check_text_line(s, s->cy, 1);
+#endif
+
+	gl = grid_get_line(s->grid, s->grid->hsize + s->cy);
+	if (gl->cellsize == 0 && COLOUR_DEFAULT(bg)) {
+#ifdef ENABLE_IMAGES
+		if (redraw && ctx->wp != NULL)
+			ctx->wp->flags |= PANE_REDRAW;
+#endif
+		return;
+	}
+
+#ifdef ENABLE_IMAGES
+	if (redraw && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1361,6 +1374,9 @@ screen_write_clearendofline(struct screen_write_ctx *ctx, u_int bg)
 	struct grid_line		*gl;
 	u_int				 sx = screen_size_x(s);
 	struct screen_write_citem	*ci = ctx->item;
+#ifdef ENABLE_IMAGES
+	int				 redraw = 0;
+#endif
 
 	if (s->cx == 0) {
 		screen_write_clearline(ctx, bg);
@@ -1368,11 +1384,20 @@ screen_write_clearendofline(struct screen_write_ctx *ctx, u_int bg)
 	}
 
 	gl = grid_get_line(s->grid, s->grid->hsize + s->cy);
-	if (s->cx > sx - 1 || (s->cx >= gl->cellsize && COLOUR_DEFAULT(bg)))
+#ifdef ENABLE_IMAGES
+	if (s->cx <= sx - 1)
+		redraw = image_check_text_area(s, s->cx, s->cy, sx - s->cx, 1);
+#endif
+	if (s->cx > sx - 1 || (s->cx >= gl->cellsize && COLOUR_DEFAULT(bg))) {
+#ifdef ENABLE_IMAGES
+		if (redraw && ctx->wp != NULL)
+			ctx->wp->flags |= PANE_REDRAW;
+#endif
 		return;
+	}
 
 #ifdef ENABLE_IMAGES
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (redraw && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1399,7 +1424,8 @@ screen_write_clearstartofline(struct screen_write_ctx *ctx, u_int bg)
 	}
 
 #ifdef ENABLE_IMAGES
-	if (image_check_line(s, s->cy, 1) && ctx->wp != NULL)
+	if (image_check_text_area(s, 0, s->cy, s->cx + 1, 1) &&
+	    ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1607,9 +1633,17 @@ screen_write_clearendofscreen(struct screen_write_ctx *ctx, u_int bg)
 	struct grid	*gd = s->grid;
 	struct tty_ctx	 ttyctx;
 	u_int		 sx = screen_size_x(s), sy = screen_size_y(s);
+#ifdef ENABLE_IMAGES
+	int		 redraw = 0;
+#endif
 
 #ifdef ENABLE_IMAGES
-	if (image_check_line(s, s->cy, sy - s->cy) && ctx->wp != NULL)
+	if (s->cx <= sx - 1)
+		redraw = image_check_text_area(s, s->cx, s->cy, sx - s->cx, 1);
+	if (s->cy + 1 < sy && image_check_text_line(s, s->cy + 1,
+	    sy - (s->cy + 1)))
+		redraw = 1;
+	if (redraw && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1641,9 +1675,19 @@ screen_write_clearstartofscreen(struct screen_write_ctx *ctx, u_int bg)
 	struct screen	*s = ctx->s;
 	struct tty_ctx	 ttyctx;
 	u_int		 sx = screen_size_x(s);
+#ifdef ENABLE_IMAGES
+	int		 redraw = 0;
+#endif
 
 #ifdef ENABLE_IMAGES
-	if (image_check_line(s, 0, s->cy - 1) && ctx->wp != NULL)
+	if (s->cy > 0)
+		redraw = image_check_text_line(s, 0, s->cy);
+	if (s->cx > sx - 1) {
+		if (image_check_text_line(s, s->cy, 1))
+			redraw = 1;
+	} else if (image_check_text_area(s, 0, s->cy, s->cx + 1, 1))
+		redraw = 1;
+	if (redraw && ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 
@@ -1988,7 +2032,8 @@ screen_write_collect_end(struct screen_write_ctx *ctx)
 	}
 
 #ifdef ENABLE_IMAGES
-	if (image_check_area(s, s->cx, s->cy, ci->used, 1) && ctx->wp != NULL)
+	if (image_check_text_area(s, s->cx, s->cy, ci->used, 1) &&
+	    ctx->wp != NULL)
 		ctx->wp->flags |= PANE_REDRAW;
 #endif
 

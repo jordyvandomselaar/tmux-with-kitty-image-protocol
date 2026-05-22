@@ -2878,7 +2878,7 @@ input_apc_kitty_image(struct input_ctx *ictx)
 			kitty_free(ki);
 			return;
 		}
-		switch (kitty_append(ictx->kitty_pending, ki, input_buffer_size)) {
+		switch (kitty_append(ictx->kitty_pending, ki)) {
 		case 0:
 			kitty_free(ki);
 			return;

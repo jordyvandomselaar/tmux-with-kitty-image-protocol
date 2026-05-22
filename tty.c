@@ -2293,15 +2293,14 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 	if (im->hidden) {
 		if (fallback == 1)
 			return;
-		if (kitty_get_action(im->data.kitty) == 'T')
-			data = kitty_print_upload(im->data.kitty, &size);
-		else
-			data = kitty_print_quiet(im->data.kitty, &size);
+		data = kitty_print_quiet(im->data.kitty, &size);
 		sent_kitty = 1;
 		x = cx;
 		y = cy;
 	} else if (fallback == 1) {
 		/* Use text fallback for non-kitty terminals. */
+		if (im->fallback_hidden)
+			return;
 		sx = im->sx;
 		sy = im->sy;
 		if (!tty_clamp_area(tty, ctx, cx, cy, sx, sy, &i, &j, &x, &y,
@@ -2328,6 +2327,8 @@ tty_cmd_kittyimage(struct tty *tty, const struct tty_ctx *ctx)
 			if (data != NULL)
 				sent_kitty = 1;
 			else {
+				if (im->fallback_hidden)
+					return;
 				data = xstrdup(im->fallback);
 				size = strlen(data);
 			}

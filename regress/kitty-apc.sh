@@ -12,12 +12,13 @@ TERM=screen
 TMUX="$TEST_TMUX -Ltest"
 CONF=$(mktemp)
 TMP=$(mktemp)
+APC=$(mktemp)
 
 kill_server() {
 	$TMUX kill-server 2>/dev/null || true
 }
 
-trap 'kill_server; rm -f "$CONF" "$TMP"' 0 1 15
+trap 'kill_server; rm -f "$CONF" "$TMP" "$APC"' 0 1 15
 
 kill_server
 printf 'set -g allow-set-title on\n' >$CONF
@@ -118,7 +119,7 @@ grep -q 'second-place' $TMP || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \
-    "printf '\033_Ga=T,q=1,i=85,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\\033[Hcover\033_Ga=d,q=1,d=a\033\\\\\033_Ga=p,q=1,i=85,c=1,r=1\033\\\\after-overwrite\n'; sleep 1"
+    "printf '\033_Ga=T,q=1,i=85,t=d,f=24,s=1,v=1,c=1,r=1;AAAA\033\\\\\033[Hcover\033_Ga=p,q=1,i=85,c=1,r=1\033\\\\after-overwrite\n'; sleep 1"
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 grep -q 'EINVAL' $TMP && exit 1
@@ -177,6 +178,28 @@ $TMUX -f$CONF new -d \
 sleep 0.5
 $TMUX capturep -pS0 >$TMP || exit 1
 [ "$(awk '/after-chunk/ { print NR; exit }' $TMP)" = 2 ] || exit 1
+
+{
+	printf '\033_Ga=T,q=1,t=d,f=24,s=262500,v=1,c=1,r=1,m=1;'
+	head -c 4000 /dev/zero | tr '\000' A
+	printf '\033\\'
+	i=1
+	while [ $i -lt 262 ]; do
+		printf '\033_Gm=1;'
+		head -c 4000 /dev/zero | tr '\000' A
+		printf '\033\\'
+		i=$((i + 1))
+	done
+	printf '\033_Gm=0;'
+	head -c 2000 /dev/zero | tr '\000' A
+	printf '\033\\after-large-chunk\n'
+} >$APC
+kill_server
+$TMUX -f$CONF new -d "cat '$APC'; sleep 1"
+sleep 0.5
+$TMUX capturep -pS0 >$TMP || exit 1
+grep -q 'EINVAL' $TMP && exit 1
+[ "$(awk '/after-large-chunk/ { print NR; exit }' $TMP)" = 2 ] || exit 1
 
 kill_server
 $TMUX -f$CONF new -d \

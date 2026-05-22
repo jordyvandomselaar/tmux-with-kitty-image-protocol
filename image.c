@@ -300,18 +300,6 @@ image_free_oldest(void)
 	return (1);
 }
 
-static void
-image_kitty_hide(struct image *im)
-{
-	if (im->hidden)
-		return;
-	image_redraw_if_visible(im);
-	if (++kitty_images_generation == 0)
-		kitty_images_generation = 1;
-	kitty_set_terminal_placement_id(im->data.kitty, 0);
-	im->hidden = 1;
-}
-
 static size_t
 image_kitty_bytes_from(struct images *images)
 {
@@ -899,21 +887,23 @@ image_kitty_scroll_down(struct screen *s, u_int lines)
 }
 #endif
 
-static void
-image_free_obscured(struct image *im)
+static int
+image_text_obscure(struct image *im)
 {
 #ifdef ENABLE_KITTY_IMAGES
-	if (im->type == IMAGE_KITTY &&
-	    kitty_get_action(im->data.kitty) == 'T') {
-		image_kitty_hide(im);
-		return;
+	if (im->type == IMAGE_KITTY) {
+		if (im->fallback_hidden)
+			return (0);
+		im->fallback_hidden = 1;
+		return (1);
 	}
 #endif
 	image_free(im);
+	return (1);
 }
 
-int
-image_check_line(struct screen *s, u_int py, u_int ny)
+static int
+image_check_line1(struct screen *s, u_int py, u_int ny, int text)
 {
 	struct image	*im, *im1;
 	int		 redraw = 0, in;
@@ -924,15 +914,37 @@ image_check_line(struct screen *s, u_int py, u_int ny)
 		in = (py + ny > im->py && py < im->py + im->sy);
 		image_log(im, __func__, "py=%u, ny=%u, in=%d", py, ny, in);
 		if (in) {
-			image_free_obscured(im);
-			redraw = 1;
+#ifdef ENABLE_KITTY_IMAGES
+			if (im->type == IMAGE_KITTY && !text)
+				continue;
+#endif
+			if (text) {
+				if (image_text_obscure(im))
+					redraw = 1;
+			} else {
+				image_free(im);
+				redraw = 1;
+			}
 		}
 	}
 	return (redraw);
 }
 
 int
-image_check_area(struct screen *s, u_int px, u_int py, u_int nx, u_int ny)
+image_check_line(struct screen *s, u_int py, u_int ny)
+{
+	return (image_check_line1(s, py, ny, 0));
+}
+
+int
+image_check_text_line(struct screen *s, u_int py, u_int ny)
+{
+	return (image_check_line1(s, py, ny, 1));
+}
+
+static int
+image_check_area1(struct screen *s, u_int px, u_int py, u_int nx, u_int ny,
+    int text)
 {
 	struct image	*im, *im1;
 	int		 redraw = 0, in;
@@ -946,11 +958,32 @@ image_check_area(struct screen *s, u_int px, u_int py, u_int nx, u_int ny)
 		    px + nx > im->px);
 		image_log(im, __func__, "py=%u, ny=%u, in=%d", py, ny, in);
 		if (in) {
-			image_free_obscured(im);
-			redraw = 1;
+#ifdef ENABLE_KITTY_IMAGES
+			if (im->type == IMAGE_KITTY && !text)
+				continue;
+#endif
+			if (text) {
+				if (image_text_obscure(im))
+					redraw = 1;
+			} else {
+				image_free(im);
+				redraw = 1;
+			}
 		}
 	}
 	return (redraw);
+}
+
+int
+image_check_area(struct screen *s, u_int px, u_int py, u_int nx, u_int ny)
+{
+	return (image_check_area1(s, px, py, nx, ny, 0));
+}
+
+int
+image_check_text_area(struct screen *s, u_int px, u_int py, u_int nx, u_int ny)
+{
+	return (image_check_area1(s, px, py, nx, ny, 1));
 }
 
 int

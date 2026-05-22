@@ -990,6 +990,7 @@ struct image {
 	} data;
 	char			*fallback;
 	int			 hidden;
+	int			 fallback_hidden;
 
 	u_int			 px;
 	u_int			 py;
@@ -3891,6 +3892,9 @@ int		 image_kitty_scroll_down(struct screen *, u_int);
 #endif
 int		 image_check_line(struct screen *, u_int, u_int);
 int		 image_check_area(struct screen *, u_int, u_int, u_int, u_int);
+int		 image_check_text_line(struct screen *, u_int, u_int);
+int		 image_check_text_area(struct screen *, u_int, u_int, u_int,
+		     u_int);
 int		 image_scroll_up_region(struct screen *, u_int, u_int, u_int);
 int		 image_scroll_up(struct screen *, u_int);
 #ifdef ENABLE_KITTY_IMAGES
@@ -3943,10 +3947,9 @@ u_int		 kitty_get_quiet(struct kitty_image *);
 int		 kitty_has_more(struct kitty_image *);
 int		 kitty_is_incomplete(struct kitty_image *);
 int		 kitty_is_continuation(struct kitty_image *);
-int		 kitty_append(struct kitty_image *, struct kitty_image *, size_t);
+int		 kitty_append(struct kitty_image *, struct kitty_image *);
 char		*kitty_print(struct kitty_image *, size_t *);
 char		*kitty_print_quiet(struct kitty_image *, size_t *);
-char		*kitty_print_upload(struct kitty_image *, size_t *);
 char		*kitty_print_redraw(struct kitty_image *, size_t *);
 char		*kitty_print_clipped(struct kitty_image *, u_int, u_int, u_int,
 		     u_int, size_t *);

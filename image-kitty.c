@@ -29,7 +29,8 @@
 #include "tmux.h"
 
 #define KITTY_CHUNK_LIMIT 4096
-#define KITTY_INFLATE_LIMIT INPUT_BUF_DEFAULT_SIZE
+#define KITTY_PAYLOAD_LIMIT ((size_t)20 * INPUT_BUF_DEFAULT_SIZE)
+#define KITTY_INFLATE_LIMIT KITTY_PAYLOAD_LIMIT
 #define KITTY_PNG_HEADER_SIZE 24
 #define KITTY_PNG_SIGNATURE_SIZE 8
 #define KITTY_PNG_IHDR_SIZE 13
@@ -1056,7 +1057,7 @@ kitty_control_for_chunk(struct kitty_image *ki, int first, int more,
 }
 
 int
-kitty_append(struct kitty_image *ki, struct kitty_image *chunk, size_t limit)
+kitty_append(struct kitty_image *ki, struct kitty_image *chunk)
 {
 	char	*encoded;
 	size_t	 encodedlen;
@@ -1067,8 +1068,9 @@ kitty_append(struct kitty_image *ki, struct kitty_image *chunk, size_t limit)
 		return (-1);
 	if (chunk->more != 0 && chunk->encodedlen % 4 != 0)
 		return (-1);
-	if (ki->encodedlen > limit || chunk->encodedlen > limit ||
-	    ki->encodedlen + chunk->encodedlen > limit)
+	if (ki->encodedlen > KITTY_PAYLOAD_LIMIT ||
+	    chunk->encodedlen > KITTY_PAYLOAD_LIMIT ||
+	    ki->encodedlen + chunk->encodedlen > KITTY_PAYLOAD_LIMIT)
 		return (-1);
 
 	if (chunk->encodedlen != 0) {
@@ -1185,25 +1187,6 @@ kitty_print_quiet(struct kitty_image *ki, size_t *outlen)
 {
 	return (kitty_print_with_overrides(ki, outlen,
 	    KITTY_QUIET_SUPPRESS_RESPONSES, NULL, 0));
-}
-
-char *
-kitty_print_upload(struct kitty_image *ki, size_t *outlen)
-{
-	struct kitty_control_override	 overrides[5];
-
-	overrides[0].key = 'a';
-	overrides[0].value = "t";
-	overrides[1].key = 'p';
-	overrides[1].value = NULL;
-	overrides[2].key = 'c';
-	overrides[2].value = NULL;
-	overrides[3].key = 'r';
-	overrides[3].value = NULL;
-	overrides[4].key = 'C';
-	overrides[4].value = NULL;
-	return (kitty_print_with_overrides(ki, outlen,
-	    KITTY_QUIET_SUPPRESS_RESPONSES, overrides, nitems(overrides)));
 }
 
 char *
